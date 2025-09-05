@@ -28,6 +28,12 @@ namespace AccesosLauncher
 {
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         public static string BaseDir { get; set; } = App.Configuration["BaseDir"] ?? string.Empty;
 
         // Extensiones ejecutables: PATHEXT + .lnk + .url
@@ -35,6 +41,9 @@ namespace AccesosLauncher
 
         public ObservableCollection<AppItem> Items { get; } = [];
         public ObservableCollection<LoggedAppItem> MostUsedItems { get; } = [];
+
+        public ObservableCollection<SettingEntry> AppSettings { get; } = [];
+        private bool _settingsLoaded;
 
         private CollectionViewSource? _groupedSource;
         private FileSystemWatcher? _watcher;
@@ -616,6 +625,10 @@ namespace AccesosLauncher
                 {
                     LoadMostUsedItems();
                 }
+                else if (MainTabControl.SelectedIndex == 2 && !_settingsLoaded) // "Configuracion" tab
+                {
+                    LoadSettings();
+                }
             }
         }
 
@@ -656,7 +669,123 @@ namespace AccesosLauncher
                 }
             }
         }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                AppSettings.Clear();
+                var jsonString = File.ReadAllText("appsettings.json");
+                using (JsonDocument document = JsonDocument.Parse(jsonString))
+                {
+                    FlattenJson(document.RootElement);
+                }
+                _settingsLoaded = true;
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error al cargar la configuración:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void FlattenJson(JsonElement element, string prefix = "")
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (JsonProperty property in element.EnumerateObject())
+                    {
+                        FlattenJson(property.Value, $"{prefix}{property.Name}:");
+                    }
+                    break;
+                case JsonValueKind.Array:
+                    AppSettings.Add(new SettingEntry { Key = prefix.TrimEnd(':'), Value = element.ToString() });
+                    break;
+                default:
+                    AppSettings.Add(new SettingEntry { Key = prefix.TrimEnd(':'), Value = element.ToString() });
+                    break;
+            }
+        }
+
+        private void SaveSettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var newSettings = new Dictionary<string, object>();
+                foreach (var setting in AppSettings)
+                {
+                    var keys = setting.Key.Split(':');
+                    var currentDict = newSettings;
+                    for (int i = 0; i < keys.Length - 1; i++)
+                    {
+                        if (!currentDict.TryGetValue(keys[i], out object? value) || value is not Dictionary<string, object>)
+                        {
+                            value = new Dictionary<string, object>();
+                            currentDict[keys[i]] = value;
+                        }
+                        currentDict = (Dictionary<string, object>)currentDict[keys[i]];
+                    }
+                    
+                    if (int.TryParse(setting.Value, out int intValue))
+                    {
+                        currentDict[keys.Last()] = intValue;
+                    }
+                    else if (double.TryParse(setting.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double doubleValue))
+                    {
+                        currentDict[keys.Last()] = doubleValue;
+                    }
+                    else if (bool.TryParse(setting.Value, out bool boolValue))
+                    {
+                        currentDict[keys.Last()] = boolValue;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(setting.Value);
+                            currentDict[keys.Last()] = doc.RootElement.Clone();
+                        }
+                        catch (JsonException)
+                        {
+                            currentDict[keys.Last()] = setting.Value;
+                        }
+                    }
+                }
+
+                var jsonString = JsonSerializer.Serialize(newSettings, JsonOptions);
+                File.WriteAllText("appsettings.json", jsonString);
+
+                System.Windows.MessageBox.Show("Configuración guardada con éxito. Algunos cambios pueden requerir reiniciar la aplicación.", "Guardado", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error al guardar la configuración:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
     }
 
-    
+    public class SettingEntry : INotifyPropertyChanged
+    {
+        public string Key { get; set; } = string.Empty;
+
+        private string _value = string.Empty;
+        public string Value
+        {
+            get => _value;
+            set
+            {
+                if (_value != value)
+                {
+                    _value = value;
+                    OnPropertyChanged(nameof(Value));
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
 }
