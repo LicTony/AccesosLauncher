@@ -6,14 +6,9 @@ using System.IO;
 
 namespace AccesosLauncher
 {
-    public class DatabaseHelper
+    public class DatabaseHelper(string connectionString)
     {
-        private readonly string _connectionString;
-
-        public DatabaseHelper(string connectionString)
-        {
-            _connectionString = connectionString;
-        }
+        private readonly string _connectionString = connectionString;
 
         public void InitializeDatabase()
         {
@@ -85,7 +80,7 @@ namespace AccesosLauncher
 
     public class LoggedAppItem
     {
-        public string Name { get; set; }
+        public string Name { get; set; } = string.Empty;
         public DateTime LastAccessTime { get; set; }
         public int AccessCount { get; set; }
     }

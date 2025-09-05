@@ -17,7 +17,7 @@ namespace AccesosLauncher
         private static readonly ConcurrentDictionary<string, ImageSource> Cache = new(StringComparer.OrdinalIgnoreCase);
 
         [SupportedOSPlatform("windows")]
-        public static ImageSource GetIconImageSource(string path, bool preferLarge = true)
+        public static ImageSource GetIconImageSource(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 return GetDefaultIcon();
@@ -69,27 +69,25 @@ namespace AccesosLauncher
             }
         }
 
-        private static BitmapSource ConvertIconToBitmapSource(Icon icon)
+        private static BitmapImage ConvertIconToBitmapSource(Icon icon)
         {
-            using (var bmp = icon.ToBitmap())
-            {
-                var stream = new MemoryStream();
-                bmp.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-                stream.Position = 0;
+            using var bmp = icon.ToBitmap();
+            var stream = new MemoryStream();
+            bmp.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+            stream.Position = 0;
 
-                var bitmapImage = new BitmapImage();
-                bitmapImage.BeginInit();
-                bitmapImage.StreamSource = stream;
-                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                bitmapImage.EndInit();
-                bitmapImage.Freeze();
+            var bitmapImage = new BitmapImage();
+            bitmapImage.BeginInit();
+            bitmapImage.StreamSource = stream;
+            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+            bitmapImage.EndInit();
+            bitmapImage.Freeze();
 
-                return bitmapImage;
-            }
+            return bitmapImage;
         }
 
         [SupportedOSPlatform("windows")]
-        private static BitmapSource GetDefaultIcon()
+        private static BitmapImage GetDefaultIcon()
         {
             using var ico = SystemIcons.Application;
             return ConvertIconToBitmapSource(ico);
@@ -100,8 +98,8 @@ namespace AccesosLauncher
             const string assocStr = "http";
             uint pcchOut = 0;
             // Get buffer size
-            AssocQueryString(AssocF.None, AssocStr.Executable, assocStr, null, null, ref pcchOut);
-            if (pcchOut == 0)
+            uint hresult = AssocQueryString(AssocF.None, AssocStr.Executable, assocStr, null, null, ref pcchOut);
+            if (hresult > 1 || pcchOut == 0) // S_OK=0, S_FALSE=1. Anything else is an error.
                 return null;
 
             var pszOut = new StringBuilder((int)pcchOut);

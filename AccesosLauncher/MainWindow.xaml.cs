@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -52,6 +53,22 @@ namespace AccesosLauncher
 
         private string _searchText = string.Empty;
         private readonly DatabaseHelper _databaseHelper;
+        private TipoCarpeta _selectedTipoCarpeta;
+
+        public TipoCarpeta SelectedTipoCarpeta
+        {
+            get => _selectedTipoCarpeta;
+            set
+            {
+                if (_selectedTipoCarpeta != value)
+                {
+                    _selectedTipoCarpeta = value;
+                    OnPropertyChanged(nameof(SelectedTipoCarpeta));
+                    _groupedSource?.View?.Refresh();
+                }
+            }
+        }
+
         public string SearchText
         {
             get => _searchText;
@@ -86,7 +103,7 @@ namespace AccesosLauncher
             InitializeComponent();
             DataContext = this;
             this.KeyDown += MainWindow_KeyDown;
-            var connectionString = App.Configuration.GetConnectionString("Sqlite");
+            var connectionString = App.Configuration.GetConnectionString("Sqlite") ?? "";
             _databaseHelper = new DatabaseHelper(connectionString);
         }
 
@@ -143,6 +160,7 @@ namespace AccesosLauncher
 
             EnsureBaseDir();
             _databaseHelper.InitializeDatabase();
+            LoadUserSettings();
             await LoadItems(); // async
             SetupWatcher();
             SetupTrayIcon();
@@ -154,7 +172,31 @@ namespace AccesosLauncher
         private void GroupedSource_Filter(object sender, FilterEventArgs e)
         {
             if (e.Item is not AppItem item) { e.Accepted = false; return; }
-            e.Accepted = MatchesSearch(item);
+
+            var accepted = MatchesSearch(item);
+            if (accepted)
+            {
+                accepted = MatchesTipoCarpeta(item);
+            }
+
+            e.Accepted = accepted;
+        }
+
+        private bool MatchesTipoCarpeta(AppItem item)
+        {
+            var directoryPath = Path.GetDirectoryName(item.FullPath);
+            if (directoryPath == null) return true;
+
+            var hasPersonalFile = File.Exists(Path.Combine(directoryPath, ".personal"));
+            var hasMixtaFile = File.Exists(Path.Combine(directoryPath, ".mixta"));
+
+            return SelectedTipoCarpeta switch
+            {
+                TipoCarpeta.Ambos => true,
+                TipoCarpeta.Personal => hasPersonalFile || hasMixtaFile,
+                TipoCarpeta.Laboral => !hasPersonalFile && !hasMixtaFile,
+                _ => true
+            };
         }
 
         private bool MatchesSearch(AppItem item)
@@ -210,7 +252,7 @@ namespace AccesosLauncher
                             rel = "Raiz";
 
                         var name = Path.GetFileNameWithoutExtension(f);
-                        var icon = IconHelper.GetIconImageSource(f, preferLarge: true);
+                        var icon = IconHelper.GetIconImageSource(f);
 
                         tmp.Add(new AppItem
                         {
@@ -354,6 +396,7 @@ namespace AccesosLauncher
                 return;
             }
 
+            SaveUserSettings();
             _notifyIcon?.Dispose();
             if (_source != null)
             {
@@ -364,11 +407,61 @@ namespace AccesosLauncher
             _debounceTimer?.Dispose();
         }
 
+        private void LoadUserSettings()
+        {
+            try
+            {
+                var settingsPath = Path.Combine(AppContext.BaseDirectory, "usersettings.json");
+                if (File.Exists(settingsPath))
+                {
+                    var json = File.ReadAllText(settingsPath);
+                    var settings = JsonSerializer.Deserialize<UserSettings>(json);
+                    SelectedTipoCarpeta = settings?.SelectedTipoCarpeta ?? TipoCarpeta.Ambos;
+                }
+                else
+                {
+                    SelectedTipoCarpeta = TipoCarpeta.Ambos;
+                }
+            }
+            catch (Exception)
+            {
+                SelectedTipoCarpeta = TipoCarpeta.Ambos;
+            }
+        }
+
+        private void SaveUserSettings()
+        {
+            try
+            {
+                var settingsPath = Path.Combine(AppContext.BaseDirectory, "usersettings.json");
+                var settings = new UserSettings { SelectedTipoCarpeta = this.SelectedTipoCarpeta };
+                var json = JsonSerializer.Serialize(settings);
+                File.WriteAllText(settingsPath, json);
+            }
+            catch (Exception)
+            {
+                // ignore
+            }
+        }
+
         private void MainWindow_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             if (e.Key == System.Windows.Input.Key.Escape)
             {
                 HideToTray();
+            }
+            if (e.Key == Key.Tab)
+            {
+                e.Handled = true;
+                MainTabControl.SelectedIndex = (MainTabControl.SelectedIndex + 1) % MainTabControl.Items.Count;
+            }
+            if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                e.Handled = true;
+                var values = (TipoCarpeta[])Enum.GetValues(typeof(TipoCarpeta));
+                var currentIndex = (int)SelectedTipoCarpeta;
+                var nextIndex = (currentIndex + 1) % values.Length;
+                SelectedTipoCarpeta = values[nextIndex];
             }
         }
 
@@ -406,7 +499,7 @@ namespace AccesosLauncher
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (_groupedSource.View == null) return;
+                if (_groupedSource?.View == null) return;
 
                 foreach (var group in _groupedSource.View.Groups)
                 {
@@ -439,7 +532,7 @@ namespace AccesosLauncher
             }), System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
-        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
             if (parent == null) return null;
 
@@ -492,7 +585,7 @@ namespace AccesosLauncher
                 {
                     try
                     {
-                        string directory = Path.GetDirectoryName(item.FullPath);
+                        string directory = Path.GetDirectoryName(item.FullPath) ?? "";
                         string extension = Path.GetExtension(item.FullPath);
                         string newFullPath = Path.Combine(directory, newName + extension);
 
