@@ -762,6 +762,16 @@ namespace AccesosLauncher
                 System.Windows.MessageBox.Show($"Error al guardar la configuración:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        private void ToggleWindowState_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = this.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        }
+
+        private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            HideToTray();
+        }
     }
 
     public class SettingEntry : INotifyPropertyChanged
