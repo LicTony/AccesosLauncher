@@ -43,6 +43,7 @@ namespace AccesosLauncher
         public ObservableCollection<LoggedAppItem> MostUsedItems { get; } = [];
 
         public ObservableCollection<SettingEntry> AppSettings { get; } = [];
+        public ObservableCollection<KeyboardShortcut> KeyboardShortcuts { get; } = [];
         private bool _settingsLoaded;
 
         private CollectionViewSource? _groupedSource;
@@ -114,6 +115,7 @@ namespace AccesosLauncher
             this.KeyDown += MainWindow_KeyDown;
             var connectionString = App.Configuration.GetConnectionString("Sqlite") ?? "";
             _databaseHelper = new DatabaseHelper(connectionString);
+            LoadKeyboardShortcuts();
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -609,6 +611,139 @@ namespace AccesosLauncher
             }
         }
 
+        private void RenameFolderMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && 
+                menuItem.Parent is ContextMenu contextMenu && 
+                contextMenu.PlacementTarget is TextBlock textBlock)
+            {
+                // Obtener el nombre de la carpeta del texto del TextBlock
+                string folderName = textBlock.Text;
+                
+                // Encontrar la ruta completa de la carpeta
+                string folderPath = Path.Combine(BaseDir, folderName);
+                
+                // Para carpetas en subdirectorios, necesitamos obtener la ruta relativa
+                // Vamos a buscar en los grupos para encontrar la ruta correcta
+                var groupedView = _groupedSource?.View;
+                if (groupedView != null)
+                {
+                    foreach (CollectionViewGroup group in groupedView.Groups.Cast<CollectionViewGroup>())
+                    {
+                        if (group.Name.ToString() == folderName)
+                        {
+                            // Para el grupo "Raiz", la ruta es BaseDir
+                            if (folderName == "Raiz")
+                            {
+                                folderPath = BaseDir;
+                            }
+                            else
+                            {
+                                folderPath = Path.Combine(BaseDir, folderName);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                string newName = Interaction.InputBox("Ingrese el nuevo nombre para la carpeta:", "Renombrar Carpeta", folderName);
+
+                if (!string.IsNullOrWhiteSpace(newName) && newName != folderName)
+                {
+                    try
+                    {
+                        string parentDirectory = Path.GetDirectoryName(folderPath) ?? BaseDir;
+                        string newFolderPath = Path.Combine(parentDirectory, newName);
+                        
+                        // Verificar que la nueva ruta no exista
+                        if (Directory.Exists(newFolderPath))
+                        {
+                            System.Windows.MessageBox.Show($"Ya existe una carpeta con el nombre '{newName}'.", 
+                                "Error al renombrar", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+
+                        Directory.Move(folderPath, newFolderPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"No se pudo renombrar la carpeta:\n{folderPath}\n\n{ex.Message}",
+                            "Error al renombrar", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
+
+        private void OpenFolderMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && 
+                menuItem.Parent is ContextMenu contextMenu && 
+                contextMenu.PlacementTarget is TextBlock textBlock)
+            {
+                // Obtener el nombre de la carpeta del texto del TextBlock
+                string folderName = textBlock.Text;
+                
+                // Determinar la ruta de la carpeta
+                string folderPath = folderName == "Raiz" ? BaseDir : Path.Combine(BaseDir, folderName);
+
+                try
+                {
+                    // Abrir la carpeta en el Explorador de Windows
+                    Process.Start("explorer.exe", folderPath);
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"No se pudo abrir la carpeta:\n{folderPath}\n\n{ex.Message}",
+                        "Error al abrir carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void OpenAllFilesMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && 
+                menuItem.Parent is ContextMenu contextMenu && 
+                contextMenu.PlacementTarget is TextBlock textBlock)
+            {
+                // Obtener el nombre de la carpeta del texto del TextBlock
+                string folderName = textBlock.Text;
+                
+                // Determinar la ruta de la carpeta
+                string folderPath = folderName == "Raiz" ? BaseDir : Path.Combine(BaseDir, folderName);
+
+                try
+                {
+                    // Obtener todos los archivos ejecutables en la carpeta
+                    var files = Directory.EnumerateFiles(folderPath, "*.*", SearchOption.TopDirectoryOnly)
+                        .Where(f => IsLaunchable(f));
+
+                    // Abrir todos los archivos
+                    foreach (var file in files)
+                    {
+                        try
+                        {
+                            var psi = new ProcessStartInfo(file)
+                            {
+                                UseShellExecute = true,
+                                WorkingDirectory = Path.GetDirectoryName(file) ?? BaseDir
+                            };
+                            Process.Start(psi);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Registrar el error pero continuar con los demás archivos
+                            System.Diagnostics.Debug.WriteLine($"No se pudo abrir el archivo {file}: {ex.Message}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"No se pudo acceder a la carpeta:\n{folderPath}\n\n{ex.Message}",
+                        "Error al abrir archivos", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
         [LibraryImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -621,14 +756,36 @@ namespace AccesosLauncher
         {
             if (e.Source is System.Windows.Controls.TabControl)
             {
-                if (MainTabControl.SelectedIndex == 1) // "Más Usados" tab
+                // Usar Dispatcher para asegurar que los controles estén completamente cargados
+                Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    LoadMostUsedItems();
-                }
-                else if (MainTabControl.SelectedIndex == 2 && !_settingsLoaded) // "Configuracion" tab
-                {
-                    LoadSettings();
-                }
+                    switch (MainTabControl.SelectedIndex)
+                    {
+                        case 0: // "Accesos" tab
+                            SearchBox.Focus();
+                            break;
+                        case 1: // "Más Usados" tab
+                            LoadMostUsedItems();
+                            // Enfocar la grilla después de cargar los datos
+                            ListViewItems.Focus();
+                            break;
+                        case 2: // "Configuracion" tab
+                            if (!_settingsLoaded)
+                            {
+                                LoadSettings();
+                            }
+                            // Enfocar la grilla de configuración
+                            if (MainTabControl.SelectedContent is DockPanel dockPanel)
+                            {
+                                var dataGrid = FindVisualChild<DataGrid>(dockPanel);
+                                dataGrid?.Focus();
+                            }
+                            break;
+                        case 3: // "Acerca de" tab
+                            // No se requiere acción especial para esta pestaña
+                            break;
+                    }
+                }), System.Windows.Threading.DispatcherPriority.ContextIdle);
             }
         }
 
@@ -686,6 +843,14 @@ namespace AccesosLauncher
             {
                 System.Windows.MessageBox.Show($"Error al cargar la configuración:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void LoadKeyboardShortcuts()
+        {
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + Alt + T", Description = "Mostrar/ocultar la ventana principal de la aplicación" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Escape", Description = "Ocultar la ventana y minimizar a la bandeja del sistema" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + T", Description = "Cambiar entre tipos de carpeta (Ambos, Personal, Laboral)" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tab", Description = "Navegar entre las pestañas principales (Accesos, Más Usados, Configuración, Acerca de)" });
         }
 
         private void FlattenJson(JsonElement element, string prefix = "")
@@ -772,6 +937,12 @@ namespace AccesosLauncher
         {
             HideToTray();
         }
+
+        private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
+        {
+            var psi = new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true };
+            Process.Start(psi);
+        }
     }
 
     public class SettingEntry : INotifyPropertyChanged
@@ -797,5 +968,11 @@ namespace AccesosLauncher
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+    }
+
+    public class KeyboardShortcut
+    {
+        public string Shortcut { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
     }
 }
