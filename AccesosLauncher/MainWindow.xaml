@@ -4,7 +4,8 @@
         Title="Accesos" Width="1100" Height="750"
         Loaded="Window_Loaded"
         Closing="Window_Closing"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" AllowsTransparency="True">
     <Window.Resources>
         <CollectionViewSource x:Key="GroupedItems" Source="{Binding Items}">
             <CollectionViewSource.GroupDescriptions>
@@ -12,28 +13,31 @@
             </CollectionViewSource.GroupDescriptions>
         </CollectionViewSource>
         <Style TargetType="ScrollViewer">
-            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Visible"/>
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
         </Style>
     </Window.Resources>
 
-    <DockPanel>
+    <Border x:Name="MainBorder" BorderBrush="#80FFFFFF">
+        <DockPanel MouseLeftButtonDown="DockPanel_MouseLeftButtonDown">
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="10">
-            <TextBlock Text="Buscar:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock Text="Buscar:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White"/>
             <TextBox x:Name="SearchBox" Width="380"
                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     VerticalAlignment="Center"/>
+                     VerticalAlignment="Center"
+                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"/>
             <TextBlock Text="{Binding ResultCountText}" Margin="12,0,0,0" VerticalAlignment="Center"
-                       Foreground="Gray"/>
+                       Foreground="LightGray"/>
         </StackPanel>
 
         <ListView ItemsSource="{Binding Source={StaticResource GroupedItems}}" x:Name="ListViewItems"
-                  ScrollViewer.CanContentScroll="True">
+                  ScrollViewer.CanContentScroll="False"
+                  Background="Transparent" BorderBrush="Transparent">
             <ListView.GroupStyle>
                 <GroupStyle>
                     <GroupStyle.HeaderTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="16" Margin="0,12,0,6"/>
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="16" Margin="0,12,0,6" Foreground="White"/>
                         </DataTemplate>
                     </GroupStyle.HeaderTemplate>
                     <GroupStyle.Panel>
@@ -50,18 +54,26 @@
                             Tag="{Binding}"
                             Click="ItemButton_Click"
                             ToolTip="{Binding FullPath}"
-                            MinWidth="160">
+                            MinWidth="160"
+                            Background="Transparent" BorderBrush="Transparent">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Renombrar" Click="RenameMenuItem_Click"/>
+                                <MenuItem Header="Eliminar" Click="DeleteMenuItem_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
                             <Image Source="{Binding Icon}" Width="48" Height="48"
                                    SnapsToDevicePixels="True"/>
                             <TextBlock Text="{Binding Name}" TextAlignment="Center"
                                        TextTrimming="CharacterEllipsis"
                                        MaxWidth="220"
-                                       TextWrapping="Wrap" Margin="4,6,4,0"/>
+                                       TextWrapping="Wrap" Margin="4,6,4,0" Foreground="White"/>
                         </StackPanel>
                     </Button>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
     </DockPanel>
+    </Border>
 </Window>

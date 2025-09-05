@@ -1,8 +1,9 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using Microsoft.Extensions.Configuration;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -16,15 +17,17 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using Microsoft.VisualBasic;
 using Path = System.IO.Path;
 using Timer = System.Timers.Timer;
+using Application = System.Windows.Application;
 
 
 namespace AccesosLauncher
 {
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
-        public static string BaseDir { get; set; } = "C:\\_Accesos";
+        public static string BaseDir { get; set; } = App.Configuration["BaseDir"] ?? string.Empty;
 
         // Extensiones ejecutables: PATHEXT + .lnk + .url
         private static readonly HashSet<string> ExecExtensions = InitExecExtensions();
@@ -111,13 +114,31 @@ namespace AccesosLauncher
         }
 
         [SupportedOSPlatform("windows6.1")]
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            if (App.Configuration.GetSection("OpacityPercentage").Exists() && int.TryParse(App.Configuration["OpacityPercentage"], out int opacityPercentage))
+            {
+                if (opacityPercentage >= 0 && opacityPercentage <= 100)
+                {
+                    var opacity = opacityPercentage / 100.0;
+                    var alpha = (byte)(opacity * 255);
+                    Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, 0, 0, 0));
+                }
+            }
+
+            if (App.Configuration.GetSection("BorderThickness").Exists() && int.TryParse(App.Configuration["BorderThickness"], out int borderThickness))
+            {
+                if (borderThickness >= 0)
+                {
+                    MainBorder.BorderThickness = new Thickness(borderThickness);
+                }
+            }
+
             _groupedSource = (CollectionViewSource)FindResource("GroupedItems");
             _groupedSource.Filter += GroupedSource_Filter;
 
             EnsureBaseDir();
-            LoadItems(); // async
+            await LoadItems(); // async
             SetupWatcher();
             SetupTrayIcon();
 
@@ -143,6 +164,13 @@ namespace AccesosLauncher
 
         private static void EnsureBaseDir()
         {
+            if (string.IsNullOrEmpty(BaseDir))
+            {
+                System.Windows.MessageBox.Show("La variable BaseDir no está configurada en appsettings.json.",
+                    "Error de Configuración", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown();
+                return;
+            }
             try
             {
                 if (!Directory.Exists(BaseDir))
@@ -156,7 +184,7 @@ namespace AccesosLauncher
         }
 
         [SupportedOSPlatform("windows6.1")]
-        private async void LoadItems()
+        private async Task LoadItems()
         {
             try
             {
@@ -195,6 +223,8 @@ namespace AccesosLauncher
 
                 _groupedSource?.View?.Refresh();
                 OnPropertyChanged(nameof(ResultCountText));
+
+                ResizeItemsInGroups();
             }
             catch (Exception ex)
             {
@@ -242,7 +272,7 @@ namespace AccesosLauncher
                 _watcher.Changed += OnFsChanged;
 
                 _debounceTimer = new Timer(400) { AutoReset = false };
-                _debounceTimer.Elapsed += (_, __) => Dispatcher.Invoke(LoadItems);
+                _debounceTimer.Elapsed += async (_, __) => await Dispatcher.InvokeAsync(LoadItems);
             }
             catch (Exception ex)
             {
@@ -333,8 +363,7 @@ namespace AccesosLauncher
         {
             if (e.Key == System.Windows.Input.Key.Escape)
             {
-                _reallyExit = true;
-                Close();
+                HideToTray();
             }
         }
 
@@ -359,6 +388,121 @@ namespace AccesosLauncher
             }
         }
 
+        private void DockPanel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ButtonState == MouseButtonState.Pressed)
+            {
+                DragMove();
+            }
+        }
+
+        private void ResizeItemsInGroups()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_groupedSource.View == null) return;
+
+                foreach (var group in _groupedSource.View.Groups)
+                {
+                    var groupItem = ListViewItems.ItemContainerGenerator.ContainerFromItem(group) as GroupItem;
+                    if (groupItem == null) continue;
+
+                    var wrapPanel = FindVisualChild<WrapPanel>(groupItem);
+                    if (wrapPanel == null) continue;
+
+                    double maxWidth = 0;
+                    double maxHeight = 0;
+
+                    var children = new List<FrameworkElement>();
+                    for (int i = 0; i < VisualTreeHelper.GetChildrenCount(wrapPanel); i++)
+                    {
+                        var child = VisualTreeHelper.GetChild(wrapPanel, i) as FrameworkElement;
+                        if (child != null)
+                        {
+                            child.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+                            maxWidth = Math.Max(maxWidth, child.DesiredSize.Width);
+                            maxHeight = Math.Max(maxHeight, child.DesiredSize.Height);
+                            children.Add(child);
+                        }
+                    }
+
+                    foreach (var child in children)
+                    {
+                        child.Width = maxWidth;
+                        child.Height = maxHeight;
+                    }
+                }
+            }), System.Windows.Threading.DispatcherPriority.ContextIdle);
+        }
+
+        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null) return null;
+
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T t)
+                {
+                    return t;
+                }
+
+                var childOfChild = FindVisualChild<T>(child);
+                if (childOfChild != null)
+                {
+                    return childOfChild;
+                }
+            }
+            return null;
+        }
+
+        private void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem { DataContext: AppItem item })
+            {
+                var result = System.Windows.MessageBox.Show($"¿Está seguro de que desea eliminar el acceso directo '{item.Name}'?\n\n{item.FullPath}",
+                    "Confirmar Eliminación", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        File.Delete(item.FullPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"No se pudo eliminar el archivo:\n{item.FullPath}\n\n{ex.Message}",
+                            "Error al eliminar", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
+
+        private void RenameMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem { DataContext: AppItem item })
+            {
+                string newName = Interaction.InputBox("Ingrese el nuevo nombre:", "Renombrar", item.Name);
+
+                if (!string.IsNullOrWhiteSpace(newName) && newName != item.Name)
+                {
+                    try
+                    {
+                        string directory = Path.GetDirectoryName(item.FullPath);
+                        string extension = Path.GetExtension(item.FullPath);
+                        string newFullPath = Path.Combine(directory, newName + extension);
+
+                        File.Move(item.FullPath, newFullPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"No se pudo renombrar el archivo:\n{item.FullPath}\n\n{ex.Message}",
+                            "Error al renombrar", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
+
         [LibraryImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -366,14 +510,6 @@ namespace AccesosLauncher
         [LibraryImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool UnregisterHotKey(IntPtr hWnd, int id);
-    }
-
-    public class AppItem
-    {
-        public string Name { get; set; } = "";
-        public string FullPath { get; set; } = "";
-        public string RelativeDirectory { get; set; } = "";
-        public ImageSource? Icon { get; set; }
     }
 
     

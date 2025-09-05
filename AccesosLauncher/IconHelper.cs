@@ -37,8 +37,7 @@ namespace AccesosLauncher
                         using var ico = Icon.ExtractAssociatedIcon(browserPath);
                         if (ico != null)
                         {
-                            var source = Imaging.CreateBitmapSourceFromHIcon(ico.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                            source.Freeze();
+                            var source = ConvertIconToBitmapSource(ico);
                             Cache[browserCacheKey] = source; // Cache it
                             return source;
                         }
@@ -60,8 +59,7 @@ namespace AccesosLauncher
                 if (ico == null)
                     return GetDefaultIcon();
 
-                var source = Imaging.CreateBitmapSourceFromHIcon(ico.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                source.Freeze(); // para usar cross-thread
+                var source = ConvertIconToBitmapSource(ico);
                 Cache[path] = source;
                 return source;
             }
@@ -71,13 +69,30 @@ namespace AccesosLauncher
             }
         }
 
+        private static BitmapSource ConvertIconToBitmapSource(Icon icon)
+        {
+            using (var bmp = icon.ToBitmap())
+            {
+                var stream = new MemoryStream();
+                bmp.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                stream.Position = 0;
+
+                var bitmapImage = new BitmapImage();
+                bitmapImage.BeginInit();
+                bitmapImage.StreamSource = stream;
+                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                bitmapImage.EndInit();
+                bitmapImage.Freeze();
+
+                return bitmapImage;
+            }
+        }
+
         [SupportedOSPlatform("windows")]
         private static BitmapSource GetDefaultIcon()
         {
             using var ico = SystemIcons.Application;
-            var source = Imaging.CreateBitmapSourceFromHIcon(ico.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            source.Freeze();
-            return source;
+            return ConvertIconToBitmapSource(ico);
         }
 
         private static string? GetHttpHandlerPath()
