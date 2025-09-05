@@ -20,60 +20,106 @@
 
     <Border x:Name="MainBorder" BorderBrush="#80FFFFFF">
         <DockPanel MouseLeftButtonDown="DockPanel_MouseLeftButtonDown">
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="10">
-            <TextBlock Text="Buscar:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White"/>
-            <TextBox x:Name="SearchBox" Width="380"
-                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     VerticalAlignment="Center"
-                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"/>
-            <TextBlock Text="{Binding ResultCountText}" Margin="12,0,0,0" VerticalAlignment="Center"
-                       Foreground="LightGray"/>
-        </StackPanel>
-
-        <ListView ItemsSource="{Binding Source={StaticResource GroupedItems}}" x:Name="ListViewItems"
-                  ScrollViewer.CanContentScroll="False"
-                  Background="Transparent" BorderBrush="Transparent">
-            <ListView.GroupStyle>
-                <GroupStyle>
-                    <GroupStyle.HeaderTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="16" Margin="0,12,0,6" Foreground="White"/>
-                        </DataTemplate>
-                    </GroupStyle.HeaderTemplate>
-                    <GroupStyle.Panel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel IsItemsHost="True"/>
-                        </ItemsPanelTemplate>
-                    </GroupStyle.Panel>
-                </GroupStyle>
-            </ListView.GroupStyle>
-
-            <ListView.ItemTemplate>
-                <DataTemplate>
-                    <Button Margin="6" Padding="8"
-                            Tag="{Binding}"
-                            Click="ItemButton_Click"
-                            ToolTip="{Binding FullPath}"
-                            MinWidth="160"
-                            Background="Transparent" BorderBrush="Transparent">
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Renombrar" Click="RenameMenuItem_Click"/>
-                                <MenuItem Header="Eliminar" Click="DeleteMenuItem_Click"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
-                            <Image Source="{Binding Icon}" Width="48" Height="48"
-                                   SnapsToDevicePixels="True"/>
-                            <TextBlock Text="{Binding Name}" TextAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       MaxWidth="220"
-                                       TextWrapping="Wrap" Margin="4,6,4,0" Foreground="White"/>
+            <TabControl x:Name="MainTabControl" Background="Transparent" BorderBrush="Transparent" SelectionChanged="MainTabControl_SelectionChanged">
+                <TabControl.Resources>
+                    <Style TargetType="TabItem">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TabItem">
+                                    <Border Name="Border" BorderThickness="1,1,1,0" BorderBrush="Gainsboro" CornerRadius="4,4,0,0" Margin="2,0">
+                                        <ContentPresenter x:Name="ContentSite"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Center"
+                                          ContentSource="Header"
+                                          Margin="10,2"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Border" Property="Background" Value="#50FFFFFF" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="False">
+                                            <Setter TargetName="Border" Property="Background" Value="Transparent" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Foreground" Value="White"/>
+                    </Style>
+                </TabControl.Resources>
+                <TabItem Header="Accesos">
+                    <DockPanel>
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="10">
+                            <TextBlock Text="Buscar:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White"/>
+                            <TextBox x:Name="SearchBox" Width="380"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center"
+                                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"/>
+                            <TextBlock Text="{Binding ResultCountText}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                       Foreground="LightGray"/>
                         </StackPanel>
-                    </Button>
-                </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
-    </DockPanel>
+
+                        <ListView ItemsSource="{Binding Source={StaticResource GroupedItems}}" x:Name="ListViewItems"
+                                  ScrollViewer.CanContentScroll="False"
+                                  Background="Transparent" BorderBrush="Transparent">
+                            <ListView.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="16" Margin="0,12,0,6" Foreground="White"/>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                    <GroupStyle.Panel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel IsItemsHost="True"/>
+                                        </ItemsPanelTemplate>
+                                    </GroupStyle.Panel>
+                                </GroupStyle>
+                            </ListView.GroupStyle>
+
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Margin="6" Padding="8"
+                                            Tag="{Binding}"
+                                            Click="ItemButton_Click"
+                                            ToolTip="{Binding FullPath}"
+                                            MinWidth="160"
+                                            Background="Transparent" BorderBrush="Transparent">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Renombrar" Click="RenameMenuItem_Click"/>
+                                                <MenuItem Header="Eliminar" Click="DeleteMenuItem_Click"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
+                                            <Image Source="{Binding Icon}" Width="48" Height="48"
+                                                   SnapsToDevicePixels="True"/>
+                                            <TextBlock Text="{Binding Name}" TextAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="220"
+                                                       TextWrapping="Wrap" Margin="4,6,4,0" Foreground="White"/>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </DockPanel>
+                </TabItem>
+                <TabItem Header="Más Usados">
+                    <DockPanel>
+                        <Button Content="Limpiar" DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="10" Padding="10,5" Click="ClearDatabase_Click"/>
+                        <ListView ItemsSource="{Binding MostUsedItems}" Background="Transparent" BorderBrush="Transparent" Foreground="White">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="300"/>
+                                    <GridViewColumn Header="Último Uso" DisplayMemberBinding="{Binding LastAccessTime, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="200"/>
+                                    <GridViewColumn Header="Usos" DisplayMemberBinding="{Binding AccessCount}" Width="100"/>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
     </Border>
 </Window>

@@ -33,6 +33,7 @@ namespace AccesosLauncher
         private static readonly HashSet<string> ExecExtensions = InitExecExtensions();
 
         public ObservableCollection<AppItem> Items { get; } = [];
+        public ObservableCollection<LoggedAppItem> MostUsedItems { get; } = [];
 
         private CollectionViewSource? _groupedSource;
         private FileSystemWatcher? _watcher;
@@ -50,6 +51,7 @@ namespace AccesosLauncher
         private const uint MOD_CONTROL = 0x0002;
 
         private string _searchText = string.Empty;
+        private readonly DatabaseHelper _databaseHelper;
         public string SearchText
         {
             get => _searchText;
@@ -84,6 +86,8 @@ namespace AccesosLauncher
             InitializeComponent();
             DataContext = this;
             this.KeyDown += MainWindow_KeyDown;
+            var connectionString = App.Configuration.GetConnectionString("Sqlite");
+            _databaseHelper = new DatabaseHelper(connectionString);
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -138,6 +142,7 @@ namespace AccesosLauncher
             _groupedSource.Filter += GroupedSource_Filter;
 
             EnsureBaseDir();
+            _databaseHelper.InitializeDatabase();
             await LoadItems(); // async
             SetupWatcher();
             SetupTrayIcon();
@@ -373,6 +378,7 @@ namespace AccesosLauncher
             {
                 try
                 {
+                    _databaseHelper.LogAccess(item.FullPath);
                     var psi = new ProcessStartInfo(item.FullPath)
                     {
                         UseShellExecute = true,
@@ -404,8 +410,7 @@ namespace AccesosLauncher
 
                 foreach (var group in _groupedSource.View.Groups)
                 {
-                    var groupItem = ListViewItems.ItemContainerGenerator.ContainerFromItem(group) as GroupItem;
-                    if (groupItem == null) continue;
+                    if (ListViewItems.ItemContainerGenerator.ContainerFromItem(group) is not GroupItem groupItem) continue;
 
                     var wrapPanel = FindVisualChild<WrapPanel>(groupItem);
                     if (wrapPanel == null) continue;
@@ -416,8 +421,7 @@ namespace AccesosLauncher
                     var children = new List<FrameworkElement>();
                     for (int i = 0; i < VisualTreeHelper.GetChildrenCount(wrapPanel); i++)
                     {
-                        var child = VisualTreeHelper.GetChild(wrapPanel, i) as FrameworkElement;
-                        if (child != null)
+                        if (VisualTreeHelper.GetChild(wrapPanel, i) is FrameworkElement child)
                         {
                             child.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
                             maxWidth = Math.Max(maxWidth, child.DesiredSize.Width);
@@ -510,6 +514,55 @@ namespace AccesosLauncher
         [LibraryImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.Source is System.Windows.Controls.TabControl)
+            {
+                if (MainTabControl.SelectedIndex == 1) // "Más Usados" tab
+                {
+                    LoadMostUsedItems();
+                }
+            }
+        }
+
+        private void LoadMostUsedItems()
+        {
+            try
+            {
+                var items = _databaseHelper.GetTopUsedItems(10);
+                MostUsedItems.Clear();
+                foreach (var item in items)
+                {
+                    MostUsedItems.Add(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error al cargar los elementos más usados:\n{ex.Message}",
+                    "Error de Base de Datos", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ClearDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            var result = System.Windows.MessageBox.Show("¿Está seguro de que desea borrar todo el historial de uso?",
+                "Confirmar Limpieza", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    _databaseHelper.ClearLog();
+                    LoadMostUsedItems();
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"No se pudo limpiar el historial:\n{ex.Message}",
+                        "Error de Base de Datos", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
     }
 
     
