@@ -22,6 +22,9 @@ using Microsoft.VisualBasic;
 using Path = System.IO.Path;
 using Timer = System.Timers.Timer;
 using Application = System.Windows.Application;
+using System.Reflection;
+using DragDropEffects = System.Windows.DragDropEffects;
+
 
 
 namespace AccesosLauncher
@@ -116,6 +119,9 @@ namespace AccesosLauncher
             var connectionString = App.Configuration.GetConnectionString("Sqlite") ?? "";
             _databaseHelper = new DatabaseHelper(connectionString);
             LoadKeyboardShortcuts();
+            
+            // Initialize drag and drop variables
+            _draggedItem = null;
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -478,6 +484,17 @@ namespace AccesosLauncher
 
         private void ItemButton_Click(object sender, RoutedEventArgs e)
         {
+            // Check if we're in the middle of a drag operation
+            if (_draggedItem != null)
+            {
+                // If we were dragging, don't execute the click
+                System.Diagnostics.Debug.WriteLine("ItemButton_Click: Drag operation detected, not executing click");
+                _draggedItem = null;
+                return;
+            }
+            
+            System.Diagnostics.Debug.WriteLine("ItemButton_Click: Executing normal click");
+            
             if (sender is FrameworkElement { Tag: AppItem item })
             {
                 try
@@ -492,10 +509,15 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    System.Windows.MessageBox.Show($"No se pudo abrir:\n{item.FullPath}\n\n{ex.Message}",
-                        "Error al abrir", MessageBoxButton.OK, MessageBoxImage.Error);
+                    System.Windows.MessageBox.Show($@"No se pudo abrir:
+{item.FullPath}
+
+{ex.Message}", "Error al abrir", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+            
+            // Ensure _draggedItem is cleared after normal click
+            _draggedItem = null;
         }
 
         private void DockPanel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -514,18 +536,18 @@ namespace AccesosLauncher
 
                 foreach (var group in _groupedSource.View.Groups)
                 {
-                    if (ListViewItems.ItemContainerGenerator.ContainerFromItem(group) is not GroupItem groupItem) continue;
+                    if (ListViewItems.ItemContainerGenerator.ContainerFromItem(group) is not System.Windows.Controls.GroupItem groupItem) continue;
 
-                    var wrapPanel = FindVisualChild<WrapPanel>(groupItem);
+                    var wrapPanel = FindVisualChildOfType<System.Windows.Controls.WrapPanel>(groupItem);
                     if (wrapPanel == null) continue;
 
                     double maxWidth = 0;
                     double maxHeight = 0;
 
-                    var children = new List<FrameworkElement>();
-                    for (int i = 0; i < VisualTreeHelper.GetChildrenCount(wrapPanel); i++)
+                    var children = new List<System.Windows.FrameworkElement>();
+                    for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(wrapPanel); i++)
                     {
-                        if (VisualTreeHelper.GetChild(wrapPanel, i) is FrameworkElement child)
+                        if (System.Windows.Media.VisualTreeHelper.GetChild(wrapPanel, i) is System.Windows.FrameworkElement child)
                         {
                             child.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
                             maxWidth = Math.Max(maxWidth, child.DesiredSize.Width);
@@ -943,6 +965,453 @@ namespace AccesosLauncher
             var psi = new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true };
             Process.Start(psi);
         }
+
+        #region Drag and Drop Implementation
+
+        private System.Windows.Point _startPoint;
+        private AppItem? _draggedItem;
+
+        private void ItemButton_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            // Store the mouse position for later use
+            _startPoint = e.GetPosition(null);
+            
+            // Store the dragged item only when we actually start dragging
+            // For now, just store the sender to identify the source
+            if (sender is System.Windows.Controls.Button button && button.Tag is AppItem item)
+            {
+                // We'll set _draggedItem in the PreviewMouseMove event when we detect actual movement
+                System.Diagnostics.Debug.WriteLine($"ItemButton_PreviewMouseLeftButtonDown: Preparing for potential drag for {item.Name}");
+            }
+        }
+
+        private void ItemButton_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            // Check if the left mouse button is pressed
+            if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
+            {
+                // Get the current mouse position
+                System.Windows.Point mousePos = e.GetPosition(null);
+                System.Windows.Vector diff = _startPoint - mousePos;
+
+                System.Diagnostics.Debug.WriteLine($"ItemButton_PreviewMouseMove: StartPoint=({_startPoint.X}, {_startPoint.Y}), Current=({mousePos.X}, {mousePos.Y}), Diff=({diff.X}, {diff.Y})");
+                System.Diagnostics.Debug.WriteLine($"ItemButton_PreviewMouseMove: Thresholds=({SystemParameters.MinimumHorizontalDragDistance}, {SystemParameters.MinimumVerticalDragDistance})");
+
+                // Check if the mouse has moved more than the system drag threshold
+                if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    // Only set _draggedItem when we actually start dragging
+                    if (_draggedItem == null && sender is System.Windows.Controls.Button button && button.Tag is AppItem item)
+                    {
+                        _draggedItem = item;
+                        System.Diagnostics.Debug.WriteLine($"ItemButton_PreviewMouseMove: Initiating drag for {item.Name}");
+                        // Initiate the drag-and-drop operation
+                        System.Windows.DataObject data = new System.Windows.DataObject("AppItem", _draggedItem);
+                        System.Windows.DragDrop.DoDragDrop((System.Windows.DependencyObject)sender, data, System.Windows.DragDropEffects.Move);
+                        e.Handled = true;
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("ItemButton_PreviewMouseMove: Movement below threshold");
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"ItemButton_PreviewMouseMove: LeftButton={e.LeftButton}, _draggedItem={_draggedItem != null}");
+            }
+        }
+
+        private void ListView_Drop(object sender, System.Windows.DragEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("ListView_Drop: Drop event triggered");
+            
+            // Handle internal item reordering (moving between directories)
+            if (e.Data.GetDataPresent("AppItem") && _draggedItem != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"ListView_Drop: Handling internal move for {_draggedItem.Name}");
+                
+                // Get the dropped item
+                if (e.Data.GetData("AppItem") is AppItem droppedItem)
+                {
+                    // Get the target directory (where the item was dropped)
+                    System.Windows.Controls.ListViewItem? targetListViewItem = FindAncestor<System.Windows.Controls.ListViewItem>((System.Windows.DependencyObject)e.OriginalSource);
+                    
+                    if (targetListViewItem != null && targetListViewItem.Content is AppItem targetItem)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"ListView_Drop: Moving {droppedItem.Name} to directory of {targetItem.Name}");
+                        // Move the item to the target directory
+                        MoveItemToDirectory(droppedItem, targetItem.RelativeDirectory);
+                    }
+                    else
+                    {
+                        // Check if dropped on a group header (directory name)
+                        var groupItem = FindAncestor<System.Windows.Controls.GroupItem>((System.Windows.DependencyObject)e.OriginalSource);
+                        if (groupItem != null)
+                        {
+                            // For group items, we need to find the ContentPresenter that holds the header
+                            var headerPresenter = FindVisualChildOfType<System.Windows.Controls.ContentPresenter>(groupItem);
+                            if (headerPresenter != null && headerPresenter.Content is System.Windows.Data.CollectionViewGroup group)
+                            {
+                                string targetDirectory = group.Name.ToString()??"";
+                                System.Diagnostics.Debug.WriteLine($"ListView_Drop: Moving {droppedItem.Name} to directory {targetDirectory}");
+                                MoveItemToDirectory(droppedItem, targetDirectory);
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"ListView_Drop: No target directory found, moving {droppedItem.Name} to root");
+                            // If dropped on the ListView itself (not on an item), move to root
+                            MoveItemToDirectory(droppedItem, "Raiz");
+                        }
+                    }
+                }
+                
+                _draggedItem = null;
+                e.Handled = true;
+                return;
+            }
+
+            // Handle files dropped from outside the application (copying from real directories)
+            if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop))
+            {
+                System.Diagnostics.Debug.WriteLine("ListView_Drop: Handling external files");
+                
+                if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] files)
+                {
+                    // Get the target directory (where the files were dropped)
+                    string targetDirectory = "Raiz"; // Default to root
+                    
+                    // Check if dropped on a group header (directory name)
+                    var groupItem = FindAncestor<System.Windows.Controls.GroupItem>((System.Windows.DependencyObject)e.OriginalSource);
+                    if (groupItem != null)
+                    {
+                        // For group items, we need to find the ContentPresenter that holds the header
+                        var headerPresenter = FindVisualChildOfType<System.Windows.Controls.ContentPresenter>(groupItem);
+                        if (headerPresenter != null && headerPresenter.Content is System.Windows.Data.CollectionViewGroup group)
+                        {
+                            targetDirectory = group.Name.ToString() ?? "";
+                            System.Diagnostics.Debug.WriteLine($"ListView_Drop: Target directory from group header is {targetDirectory}");
+                        }
+                    }
+                    else
+                    {
+                        // Check if dropped on a list item
+                        System.Windows.Controls.ListViewItem? targetListViewItem = FindAncestor<System.Windows.Controls.ListViewItem>((System.Windows.DependencyObject)e.OriginalSource);
+                        if (targetListViewItem != null && targetListViewItem.Content is AppItem targetItem)
+                        {
+                            targetDirectory = targetItem.RelativeDirectory;
+                            System.Diagnostics.Debug.WriteLine($"ListView_Drop: Target directory from list item is {targetDirectory}");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"ListView_Drop: No specific target directory found, using root");
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"ListView_Drop: Final target directory is {targetDirectory}");
+                    
+                    foreach (string file in files)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"ListView_Drop: Processing file {file}");
+                        
+                        string extension = System.IO.Path.GetExtension(file).ToLower();
+                        if (extension == ".lnk" || extension == ".url")
+                        {
+                            // Copy the file to the target directory
+                            CopyFileToDirectory(file, targetDirectory);
+                        }
+                        else
+                        {
+                            // For other file types, create a shortcut (.lnk) to the file
+                            CreateShortcutToDirectory(file, targetDirectory);
+                        }
+                    }
+                    
+                    // Refresh the grouped view
+                    _groupedSource?.View?.Refresh();
+                    ResizeItemsInGroups();
+                }
+                
+                e.Handled = true;
+            }
+        }
+
+        private void ListView_DragEnter(object sender, System.Windows.DragEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("ListView_DragEnter: Drag enter event triggered");
+            
+            // Check if the data being dragged is a file
+            if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop))
+            {
+                System.Diagnostics.Debug.WriteLine("ListView_DragEnter: External files detected");
+                
+                // Check if all files are .lnk or .url
+                if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] files)
+                {
+                    bool allValid = files.All(file => 
+                    {
+                        string extension = System.IO.Path.GetExtension(file).ToLower();
+                        System.Diagnostics.Debug.WriteLine($"ListView_DragEnter: Checking file {file} with extension {extension}");
+                        return extension == ".lnk" || extension == ".url";
+                    });
+                    
+                    e.Effects = allValid ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
+                    System.Diagnostics.Debug.WriteLine($"ListView_DragEnter: Setting effects to {e.Effects}");
+                }
+                else
+                {
+                    e.Effects = System.Windows.DragDropEffects.None;
+                    System.Diagnostics.Debug.WriteLine("ListView_DragEnter: No valid files found");
+                }
+            }
+            // Check if the data being dragged is an AppItem (internal drag)
+            else if (e.Data.GetDataPresent("AppItem"))
+            {
+                System.Diagnostics.Debug.WriteLine("ListView_DragEnter: Internal AppItem detected");
+                e.Effects = System.Windows.DragDropEffects.Move;
+            }
+            else
+            {
+                e.Effects = System.Windows.DragDropEffects.None;
+                System.Diagnostics.Debug.WriteLine("ListView_DragEnter: No valid data detected");
+            }
+            
+            e.Handled = true;
+        }
+
+        private void MoveItemToDirectory(AppItem item, string targetDirectory)
+        {
+            try
+            {
+                // If the target directory is the same as the current directory, do nothing
+                if (String.IsNullOrEmpty(targetDirectory))
+                {
+                    System.Diagnostics.Debug.WriteLine($"MoveItemToDirectory: targetDirectory IsNullOrEmpty ");
+                    return;
+                }
+
+
+
+                // Get the current directory of the item
+                string currentDirectory = item.RelativeDirectory;
+                
+                // If the target directory is the same as the current directory, do nothing
+                if (currentDirectory == targetDirectory)
+                {
+                    System.Diagnostics.Debug.WriteLine($"MoveItemToDirectory: Item {item.Name} is already in directory {targetDirectory}");
+                    return;
+                }
+                
+                // Determine the full paths
+                string currentPath = item.FullPath;
+                string fileName = System.IO.Path.GetFileName(currentPath);
+                string targetPath;
+                
+                if (targetDirectory == "Raiz")
+                {
+                    targetPath = System.IO.Path.Combine(BaseDir, fileName);
+                }
+                else
+                {
+                    string targetDirPath = System.IO.Path.Combine(BaseDir, targetDirectory);
+                    // Create the target directory if it doesn't exist
+                    if (!System.IO.Directory.Exists(targetDirPath))
+                    {
+                        System.IO.Directory.CreateDirectory(targetDirPath);
+                    }
+                    targetPath = System.IO.Path.Combine(targetDirPath, fileName);
+                }
+                
+                // Move the file
+                System.IO.File.Move(currentPath, targetPath);
+                
+                // Update the item in the collection
+                item.RelativeDirectory = targetDirectory;
+                item.FullPath = targetPath;
+                
+                // Refresh the grouped view
+                _groupedSource?.View?.Refresh();
+                ResizeItemsInGroups();
+                
+                System.Diagnostics.Debug.WriteLine($"MoveItemToDirectory: Moved {item.Name} from {currentDirectory} to {targetDirectory}");
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"MoveItemToDirectory: Error moving {item.Name} - {ex.Message}");
+                System.Windows.MessageBox.Show($"Error al mover el archivo:\n{ex.Message}", "Error", 
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+        
+        private void CopyFileToDirectory(string sourcePath, string targetDirectory)
+        {
+            try
+            {
+                string fileName = System.IO.Path.GetFileName(sourcePath);
+                string targetPath;
+                
+                if (targetDirectory == "Raiz")
+                {
+                    targetPath = System.IO.Path.Combine(BaseDir, fileName);
+                }
+                else
+                {
+                    string targetDirPath = System.IO.Path.Combine(BaseDir, targetDirectory);
+                    // Create the target directory if it doesn't exist
+                    if (!System.IO.Directory.Exists(targetDirPath))
+                    {
+                        System.IO.Directory.CreateDirectory(targetDirPath);
+                    }
+                    targetPath = System.IO.Path.Combine(targetDirPath, fileName);
+                }
+                
+                // Copy the file
+                System.IO.File.Copy(sourcePath, targetPath, true);
+                
+                // Create a new AppItem for the copied file
+                string name = System.IO.Path.GetFileNameWithoutExtension(targetPath);
+                System.Windows.Media.Imaging.BitmapImage icon = (System.Windows.Media.Imaging.BitmapImage)IconHelper.GetIconImageSource(targetPath);
+                
+                AppItem newItem = new()
+                {
+                    Name = name,
+                    FullPath = targetPath,
+                    RelativeDirectory = targetDirectory,
+                    Icon = icon
+                };
+                
+                // Add the new item to the collection
+                Items.Add(newItem);
+                
+                System.Diagnostics.Debug.WriteLine($"CopyFileToDirectory: Copied {fileName} to {targetDirectory}");
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CopyFileToDirectory: Error copying {sourcePath} - {ex.Message}");
+                System.Windows.MessageBox.Show($"Error al copiar el archivo:\n{ex.Message}", "Error", 
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+        
+        private void CreateShortcutToDirectory(string sourcePath, string targetDirectory)
+        {
+            try
+            {
+                string fileName = System.IO.Path.GetFileNameWithoutExtension(sourcePath) + ".lnk";
+                string targetPath;
+                
+                if (targetDirectory == "Raiz")
+                {
+                    targetPath = System.IO.Path.Combine(BaseDir, fileName);
+                }
+                else
+                {
+                    string targetDirPath = System.IO.Path.Combine(BaseDir, targetDirectory);
+                    // Create the target directory if it doesn't exist
+                    if (!System.IO.Directory.Exists(targetDirPath))
+                    {
+                        System.IO.Directory.CreateDirectory(targetDirPath);
+                    }
+                    targetPath = System.IO.Path.Combine(targetDirPath, fileName);
+                }
+
+                // Create a shortcut to the file
+                CreateShortcut(sourcePath, targetPath);
+                
+                // Create a new AppItem for the shortcut
+                string name = System.IO.Path.GetFileNameWithoutExtension(targetPath);
+                System.Windows.Media.Imaging.BitmapImage icon = (System.Windows.Media.Imaging.BitmapImage)IconHelper.GetIconImageSource(targetPath);
+
+                AppItem newItem = new()
+                {
+                    Name = name,
+                    FullPath = targetPath,
+                    RelativeDirectory = targetDirectory,
+                    Icon = icon
+                };
+                
+                // Add the new item to the collection
+                Items.Add(newItem);
+                
+                System.Diagnostics.Debug.WriteLine($"CreateShortcutToDirectory: Created shortcut for {sourcePath} in {targetDirectory}");
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CreateShortcutToDirectory: Error creating shortcut for {sourcePath} - {ex.Message}");
+                System.Windows.MessageBox.Show($"Error al crear el acceso directo:\n{ex.Message}", "Error", 
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+        
+        private static void CreateShortcut(string sourcePath, string shortcutPath)
+        {
+            try
+            {
+                // Use Windows Script Host to create the shortcut
+                Type? t = Type.GetTypeFromProgID("WScript.Shell");
+                if (t is null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"CreateShortcut: Error creating shortcut from {sourcePath} to {shortcutPath} - Type? t = Type.GetTypeFromProgID(\"WScript.Shell\")");
+                    throw new System.Exception($"No se pudo crear el acceso directo: {shortcutPath}");
+                }
+
+                dynamic? shell = Activator.CreateInstance(t);
+                if (shell is null) 
+                {
+                    System.Diagnostics.Debug.WriteLine($"CreateShortcut: Error creating shortcut from {sourcePath} to {shortcutPath} -  dynamic? shell = Activator.CreateInstance(t);");
+                    throw new System.Exception($"No se pudo crear el acceso directo: {sourcePath}");
+                }
+
+
+                var shortcut = shell.CreateShortcut(shortcutPath);
+                shortcut.TargetPath = sourcePath;
+                shortcut.Save();
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CreateShortcut: Error creating shortcut from {sourcePath} to {shortcutPath} - {ex.Message}");
+                throw new System.Exception($"No se pudo crear el acceso directo: {ex.Message}", ex);
+            }
+        }
+
+        // Helper method to find the ancestor of a specific type
+        private static T? FindAncestor<T>(System.Windows.DependencyObject current) where T : System.Windows.DependencyObject
+        {
+            do
+            {
+                if (current is T ancestor)
+                {
+                    return ancestor;
+                }
+                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+            }
+            while (current != null);
+            return null;
+        }
+        
+        // Helper method to find a visual child of a specific type
+        private static T? FindVisualChildOfType<T>(System.Windows.DependencyObject parent) where T : System.Windows.DependencyObject
+        {
+            for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is T typedChild)
+                {
+                    return typedChild;
+                }
+                
+                var childOfChild = FindVisualChildOfType<T>(child);
+                if (childOfChild != null)
+                {
+                    return childOfChild;
+                }
+            }
+            return null;
+        }
+
+        #endregion
     }
 
     public class SettingEntry : INotifyPropertyChanged

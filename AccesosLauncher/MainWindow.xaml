@@ -75,7 +75,10 @@
 
                         <ListView ItemsSource="{Binding Source={StaticResource GroupedItems}}" x:Name="ListViewItems"
                                   ScrollViewer.CanContentScroll="False"
-                                  Background="Transparent" BorderBrush="Transparent">
+                                  Background="Transparent" BorderBrush="Transparent"
+                                  AllowDrop="True"
+                                  Drop="ListView_Drop"
+                                  DragEnter="ListView_DragEnter">
                             <ListView.GroupStyle>
                                 <GroupStyle>
                                     <GroupStyle.HeaderTemplate>
@@ -104,6 +107,8 @@
                                     <Button Margin="6" Padding="8"
                                             Tag="{Binding}"
                                             Click="ItemButton_Click"
+                                            PreviewMouseLeftButtonDown="ItemButton_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="ItemButton_PreviewMouseMove"
                                             ToolTip="{Binding FullPath}"
                                             Width="160" Height="120"
                                             Background="Transparent" BorderBrush="Transparent">
