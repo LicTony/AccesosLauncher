@@ -12,6 +12,7 @@ using System.Runtime.InteropServices.Marshalling;
 using System.Text;
 
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Interoperability", "CA1401:P/Invokes should not be visible", Justification = "P/Invoke methods are internal implementation details")]
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Interoperability", "SYSLIB1054:Use 'LibraryImportAttribute' instead of 'DllImportAttribute'", Justification = "Complex marshalling scenarios require DllImport")]
 
 namespace AccesosLauncher
 {
