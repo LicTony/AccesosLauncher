@@ -114,6 +114,12 @@ namespace AccesosLauncher
         public MainWindow()
         {
             InitializeComponent();
+
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            if (version != null)
+            {
+                VersionLabel.Content = $"Accesos Launcher Ver. {version.Major}.{version.Minor}.{version.Build}";
+            }
             DataContext = this;
             this.KeyDown += MainWindow_KeyDown;
             var connectionString = App.Configuration.GetConnectionString("Sqlite") ?? "";
@@ -1094,6 +1100,7 @@ namespace AccesosLauncher
         private void LoadKeyboardShortcuts()
         {
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + Alt + T", Description = "Mostrar/ocultar la ventana principal de la aplicación" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tecla de Windows + Shift + Flecha Izq. o Der.", Description = "Mover la ventana principal de la aplicación a otro monitor" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Escape", Description = "Ocultar la ventana y minimizar a la bandeja del sistema" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + T", Description = "Cambiar entre tipos de carpeta (Ambos, Personal, Laboral)" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tab", Description = "Navegar entre las pestañas principales (Accesos, Más Usados, Configuración, Acerca de)" });
