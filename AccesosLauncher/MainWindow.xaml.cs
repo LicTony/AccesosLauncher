@@ -253,19 +253,29 @@ namespace AccesosLauncher
             try
             {
                 var existed = Directory.Exists(BaseDir);
+                
+                // Get all directories first, including empty ones (but excluding hidden ones)
+                var directories = existed 
+                    ? Directory.EnumerateDirectories(BaseDir, "*", SearchOption.AllDirectories)
+                        .Where(dir => !IsHidden(dir))
+                    : [];
+                
+                // Get all launchable files (but excluding those in hidden directories)
                 var files = existed
                     ? Directory.EnumerateFiles(BaseDir, "*.*", SearchOption.AllDirectories)
-                        .Where(f => IsLaunchable(f))
+                        .Where(f => IsLaunchable(f) && !IsInHiddenDirectory(f))
                     : [];
 
                 var list = await Task.Run(() =>
                 {
                     var tmp = new List<AppItem>();
+                    
+                    // Add launchable files
                     foreach (var f in files)
                     {
                         var dir = Path.GetDirectoryName(f) ?? BaseDir;
                         var rel = Path.GetRelativePath(BaseDir, dir);
-                        if (string.IsNullOrWhiteSpace(rel) || rel == "." || rel == @"\")
+                        if (string.IsNullOrWhiteSpace(rel) || rel == "." || rel == @"")
                             rel = "Raiz";
 
                         var name = Path.GetFileNameWithoutExtension(f);
@@ -276,9 +286,34 @@ namespace AccesosLauncher
                             Name = name,
                             FullPath = f,
                             RelativeDirectory = rel,
-                            Icon = icon
+                            Icon = icon,
+                            IsEmptyFolder = false
                         });
                     }
+                    
+                    // Add empty directories (but excluding hidden ones)
+                    foreach (var dir in directories)
+                    {
+                        // Check if this directory is already represented by files
+                        var relDir = Path.GetRelativePath(BaseDir, dir);
+                        bool hasFilesInDir = tmp.Any(item => item.RelativeDirectory == relDir);
+                        
+                        // If directory is empty and not already represented, add a placeholder
+                        if (!hasFilesInDir)
+                        {
+                            var dirName = Path.GetFileName(dir);
+                            // Create a placeholder item for empty directory
+                            tmp.Add(new AppItem
+                            {
+                                Name = dirName,
+                                FullPath = dir,
+                                RelativeDirectory = relDir,
+                                Icon = IconHelper.GetFolderIcon(),
+                                IsEmptyFolder = true
+                            });
+                        }
+                    }
+                    
                     return tmp;
                 });
 
@@ -292,15 +327,43 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Error al leer accesos:\n{ex.Message}", "Error",
+                System.Windows.MessageBox.Show($"Error al leer accesos:{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private static bool IsLaunchable(string path)
+        private static bool IsHidden(string path)
         {
-            var ext = Path.GetExtension(path);
-            return !string.IsNullOrEmpty(ext) && ExecExtensions.Contains(ext);
+            try
+            {
+                var attributes = File.GetAttributes(path);
+                return attributes.HasFlag(FileAttributes.Hidden);
+            }
+            catch
+            {
+                // If we can't get attributes, assume it's not hidden
+                return false;
+            }
+        }
+
+        private static bool IsInHiddenDirectory(string filePath)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(filePath);
+                while (!string.IsNullOrEmpty(dir) && dir != Path.GetPathRoot(dir))
+                {
+                    if (IsHidden(dir))
+                        return true;
+                    dir = Path.GetDirectoryName(dir);
+                }
+                return false;
+            }
+            catch
+            {
+                // If we can't check directories, assume it's not in a hidden directory
+                return false;
+            }
         }
 
         private static HashSet<string> InitExecExtensions()
@@ -317,6 +380,12 @@ namespace AccesosLauncher
                 set.Add(e);
             }
             return set;
+        }
+
+        private static bool IsLaunchable(string path)
+        {
+            var ext = Path.GetExtension(path);
+            return !string.IsNullOrEmpty(ext) && ExecExtensions.Contains(ext);
         }
 
         [SupportedOSPlatform("windows6.1")]
@@ -497,22 +566,40 @@ namespace AccesosLauncher
             
             if (sender is FrameworkElement { Tag: AppItem item })
             {
-                try
+                // Handle empty folder items
+                if (item.IsEmptyFolder)
                 {
-                    _databaseHelper.LogAccess(item.FullPath);
-                    var psi = new ProcessStartInfo(item.FullPath)
+                    try
                     {
-                        UseShellExecute = true,
-                        WorkingDirectory = Path.GetDirectoryName(item.FullPath) ?? BaseDir
-                    };
-                    Process.Start(psi);
+                        // Open the folder in Windows Explorer
+                        Process.Start("explorer.exe", item.FullPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"No se pudo abrir la carpeta:\n{item.FullPath}\n\n{ex.Message}",
+                            "Error al abrir carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    System.Windows.MessageBox.Show($@"No se pudo abrir:
+                    // Handle regular file items
+                    try
+                    {
+                        _databaseHelper.LogAccess(item.FullPath);
+                        var psi = new ProcessStartInfo(item.FullPath)
+                        {
+                            UseShellExecute = true,
+                            WorkingDirectory = Path.GetDirectoryName(item.FullPath) ?? BaseDir
+                        };
+                        Process.Start(psi);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($@"No se pudo abrir:
 {item.FullPath}
 
 {ex.Message}", "Error al abrir", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                 }
             }
             
@@ -720,6 +807,143 @@ namespace AccesosLauncher
                 }
             }
         }
+
+       
+
+
+        private void CreateFolderMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            // Get the folder name from the context menu
+            if (sender is MenuItem menuItem &&
+                menuItem.Parent is ContextMenu contextMenu &&
+                contextMenu.PlacementTarget is TextBlock textBlock)
+            {
+                string folderName = textBlock.Text;
+
+                // Ask the user for the new folder name
+                string newFolderName = Microsoft.VisualBasic.Interaction.InputBox("Ingrese el nombre de la nueva carpeta:", "Crear carpeta", "");
+
+                if (!string.IsNullOrWhiteSpace(newFolderName))
+                {
+                    try
+                    {
+                        // Validate the folder name (check for invalid characters)
+                        var invalidChars = Path.GetInvalidFileNameChars();
+                        if (newFolderName.IndexOfAny(invalidChars) >= 0)
+                        {
+                            System.Windows.MessageBox.Show("El nombre de la carpeta contiene caracteres no válidos.",
+                                "Error al crear carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
+
+                        string newFolderPath;
+                        if (folderName == "Raiz")
+                        {
+                            // Creating a folder in the root directory
+                            newFolderPath = Path.Combine(BaseDir, newFolderName);
+                        }
+                        else
+                        {
+                            // Creating a folder in a subdirectory
+                            string parentPath = Path.Combine(BaseDir, folderName);
+                            newFolderPath = Path.Combine(parentPath, newFolderName);
+                        }
+
+                        // Check if the directory already exists
+                        if (Directory.Exists(newFolderPath))
+                        {
+                            System.Windows.MessageBox.Show($"Ya existe una carpeta con el nombre '{newFolderName}'.",
+                                "Error al crear carpeta", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+
+                        // Create the directory
+                        Directory.CreateDirectory(newFolderPath);
+
+                        // Refresh the view to show the new folder
+                        _groupedSource?.View?.Refresh();
+                        ResizeItemsInGroups();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"No se pudo crear la carpeta:\n{ex.Message}",
+                            "Error al crear carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
+
+        private void DeleteFolderMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            // Get the folder name from the context menu
+            if (sender is MenuItem menuItem &&
+                menuItem.Parent is ContextMenu contextMenu &&
+                contextMenu.PlacementTarget is TextBlock textBlock)
+            {
+                string folderName = textBlock.Text;
+
+                // Don't allow deletion of the root folder
+                if (folderName == "Raiz")
+                {
+                    System.Windows.MessageBox.Show("No se puede eliminar la carpeta raíz.",
+                        "Eliminar carpeta", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Check if the folder is empty
+                string folderPath = Path.Combine(BaseDir, folderName);
+                if (Directory.Exists(folderPath))
+                {
+                    try
+                    {
+                        var files = Directory.GetFiles(folderPath);
+                        var subdirs = Directory.GetDirectories(folderPath);
+                        
+                        if (files.Length > 0 || subdirs.Length > 0)
+                        {
+                            // Confirm with the user for non-empty folder
+                            var result = System.Windows.MessageBox.Show($"La carpeta '{folderName}' no está vacía.¿Está seguro de que desea eliminar la carpeta y todos sus contenidos?",
+                                "Confirmar eliminación", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                            if (result != MessageBoxResult.Yes)
+                            {
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            // Confirm with the user for empty folder
+                            var result = System.Windows.MessageBox.Show($"¿Está seguro de que desea eliminar la carpeta vacía '{folderName}'?",
+                                "Confirmar eliminación", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                            if (result != MessageBoxResult.Yes)
+                            {
+                                return;
+                            }
+                        }
+
+                        // Delete the directory and all its contents
+                        Directory.Delete(folderPath, true);
+
+                        // Refresh the view to reflect the changes
+                        _groupedSource?.View?.Refresh();
+                        ResizeItemsInGroups();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"No se pudo eliminar la carpeta:{ex.Message}",
+                            "Error al eliminar carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                else
+                {
+                    System.Windows.MessageBox.Show($"La carpeta '{folderName}' no existe.",
+                        "Error al eliminar carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        
 
         private void OpenAllFilesMenuItem_Click(object sender, RoutedEventArgs e)
         {
@@ -1007,7 +1231,7 @@ namespace AccesosLauncher
                         _draggedItem = item;
                         System.Diagnostics.Debug.WriteLine($"ItemButton_PreviewMouseMove: Initiating drag for {item.Name}");
                         // Initiate the drag-and-drop operation
-                        System.Windows.DataObject data = new System.Windows.DataObject("AppItem", _draggedItem);
+                        System.Windows.DataObject data = new("AppItem", _draggedItem);
                         System.Windows.DragDrop.DoDragDrop((System.Windows.DependencyObject)sender, data, System.Windows.DragDropEffects.Move);
                         e.Handled = true;
                     }

@@ -89,6 +89,9 @@
                                                         <MenuItem Header="Renombrar" Click="RenameFolderMenuItem_Click"/>
                                                         <MenuItem Header="Abrir carpeta" Click="OpenFolderMenuItem_Click"/>
                                                         <MenuItem Header="Abrir todos los archivos de la carpeta" Click="OpenAllFilesMenuItem_Click"/>
+                                                        <Separator/>
+                                                        <MenuItem Header="Crear nueva carpeta" Click="CreateFolderMenuItem_Click"/>
+                                                        <MenuItem Header="Eliminar carpeta" Click="DeleteFolderMenuItem_Click"/>
                                                     </ContextMenu>
                                                 </TextBlock.ContextMenu>
                                             </TextBlock>
@@ -125,7 +128,18 @@
                                                        TextTrimming="CharacterEllipsis"
                                                        MaxWidth="140"
                                                        TextWrapping="Wrap" Margin="4,6,4,0" Foreground="White"
-                                                       HorizontalAlignment="Center"/>
+                                                       HorizontalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEmptyFolder}" Value="True">
+                                                                <Setter Property="FontStyle" Value="Italic"/>
+                                                                <Setter Property="Opacity" Value="0.7"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>

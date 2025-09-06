@@ -8,7 +8,10 @@ using System.Windows.Media.Imaging;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Text;
+
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Interoperability", "CA1401:P/Invokes should not be visible", Justification = "P/Invoke methods are internal implementation details")]
 
 namespace AccesosLauncher
 {
@@ -67,6 +70,37 @@ namespace AccesosLauncher
             {
                 return GetDefaultIcon();
             }
+        }
+
+        [SupportedOSPlatform("windows")]
+        public static ImageSource GetFolderIcon()
+        {
+            const string folderCacheKey = "::FOLDER_ICON::";
+            if (Cache.TryGetValue(folderCacheKey, out var folderIcon))
+                return folderIcon;
+
+            try
+            {
+                // Get the system folder icon
+                var shinfo = new SHFILEINFO();
+                var ret = SHGetFileInfo(@"C:\", 0, ref shinfo, (uint)Marshal.SizeOf(shinfo), 
+                    SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES);
+                
+                if (ret != IntPtr.Zero)
+                {
+                    using var icon = Icon.FromHandle(shinfo.hIcon);
+                    var source = ConvertIconToBitmapSource(icon);
+                    Cache[folderCacheKey] = source;
+                    return source;
+                }
+            }
+            catch
+            {
+                // If we can't get the folder icon, fall back to default icon
+                return GetDefaultIcon();
+            }
+            
+            return GetDefaultIcon();
         }
 
         private static BitmapImage ConvertIconToBitmapSource(Icon icon)
@@ -171,6 +205,34 @@ namespace AccesosLauncher
             AppIconReference,
             Max,
         }
+
+        #endregion
+
+        #region P/Invoke for Folder Icon
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct SHFILEINFO
+        {
+            public IntPtr hIcon;
+            public int iIcon;
+            public uint dwAttributes;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szDisplayName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
+            public string szTypeName;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SHGetFileInfo(
+            string pszPath, 
+            uint dwFileAttributes, 
+            ref SHFILEINFO psfi, 
+            uint cbFileInfo, 
+            uint uFlags);
+
+        private const uint SHGFI_ICON = 0x000000100;
+        private const uint SHGFI_LARGEICON = 0x000000000;
+        private const uint SHGFI_USEFILEATTRIBUTES = 0x000000010;
 
         #endregion
     }

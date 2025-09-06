@@ -13,5 +13,6 @@ namespace AccesosLauncher
         public string FullPath { get; set; } = "";
         public string RelativeDirectory { get; set; } = "";
         public ImageSource? Icon { get; set; }
+        public bool IsEmptyFolder { get; set; } = false;
     }
 }
