@@ -218,7 +218,7 @@ namespace AccesosLauncher
             {
                 TipoCarpeta.Ambos => true,
                 TipoCarpeta.Personal => hasPersonalFile || hasMixtaFile,
-                TipoCarpeta.Laboral => !hasPersonalFile && !hasMixtaFile,
+                TipoCarpeta.Laboral => !hasPersonalFile,
                 _ => true
             };
         }
@@ -1011,8 +1011,7 @@ namespace AccesosLauncher
 
         private void FolderContextMenu_Loaded(object sender, RoutedEventArgs e)
         {
-            var contextMenu = sender as ContextMenu;
-            if (contextMenu == null) return;
+            if (sender is not ContextMenu contextMenu) return;
 
             contextMenu.Opened -= FolderContextMenu_Opened;
             contextMenu.Opened += FolderContextMenu_Opened;
