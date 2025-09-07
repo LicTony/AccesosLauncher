@@ -24,6 +24,7 @@ using Timer = System.Timers.Timer;
 using Application = System.Windows.Application;
 using System.Reflection;
 using DragDropEffects = System.Windows.DragDropEffects;
+using MessageBox = System.Windows.MessageBox;
 
 
 
@@ -679,7 +680,7 @@ namespace AccesosLauncher
             return null;
         }
 
-        private void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
+        private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (sender is MenuItem { DataContext: AppItem item })
             {
@@ -690,7 +691,14 @@ namespace AccesosLauncher
                 {
                     try
                     {
+                        var fileInfo = new FileInfo(item.FullPath);
+                        if (fileInfo.Exists && fileInfo.IsReadOnly)
+                        {
+                            fileInfo.IsReadOnly = false;
+                        }
+
                         File.Delete(item.FullPath);
+                        await LoadItems();
                     }
                     catch (Exception ex)
                     {
@@ -817,7 +825,7 @@ namespace AccesosLauncher
        
 
 
-        private void CreateFolderMenuItem_Click(object sender, RoutedEventArgs e)
+        private async void CreateFolderMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Get the folder name from the context menu
             if (sender is MenuItem menuItem &&
@@ -867,8 +875,7 @@ namespace AccesosLauncher
                         Directory.CreateDirectory(newFolderPath);
 
                         // Refresh the view to show the new folder
-                        _groupedSource?.View?.Refresh();
-                        ResizeItemsInGroups();
+                        await LoadItems();
                     }
                     catch (Exception ex)
                     {
@@ -879,7 +886,7 @@ namespace AccesosLauncher
             }
         }
 
-        private void DeleteFolderMenuItem_Click(object sender, RoutedEventArgs e)
+        private async void DeleteFolderMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Get the folder name from the context menu
             if (sender is MenuItem menuItem &&
@@ -928,16 +935,22 @@ namespace AccesosLauncher
                             }
                         }
 
+                        // Force remove read-only attributes
+                        var directoryInfo = new DirectoryInfo(folderPath);
+                        foreach (var info in directoryInfo.GetFileSystemInfos("*", SearchOption.AllDirectories))
+                        {
+                            info.Attributes = FileAttributes.Normal;
+                        }
+
                         // Delete the directory and all its contents
                         Directory.Delete(folderPath, true);
 
                         // Refresh the view to reflect the changes
-                        _groupedSource?.View?.Refresh();
-                        ResizeItemsInGroups();
+                        await LoadItems();
                     }
                     catch (Exception ex)
                     {
-                        System.Windows.MessageBox.Show($"No se pudo eliminar la carpeta:{ex.Message}",
+                        System.Windows.MessageBox.Show($"No se pudo eliminar la carpeta: {ex.Message}",
                             "Error al eliminar carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
@@ -993,6 +1006,112 @@ namespace AccesosLauncher
                     System.Windows.MessageBox.Show($"No se pudo acceder a la carpeta:\n{folderPath}\n\n{ex.Message}",
                         "Error al abrir archivos", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
+            }
+        }
+
+        private void FolderContextMenu_Loaded(object sender, RoutedEventArgs e)
+        {
+            var contextMenu = sender as ContextMenu;
+            if (contextMenu == null) return;
+
+            contextMenu.Opened -= FolderContextMenu_Opened;
+            contextMenu.Opened += FolderContextMenu_Opened;
+
+            var typeSubmenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item => "Tipo".Equals(item.Header));
+            if (typeSubmenu != null)
+            {
+                foreach (MenuItem item in typeSubmenu.Items)
+                {
+                    item.Click -= FolderTypeMenuItem_Click;
+                    item.Click += FolderTypeMenuItem_Click;
+                }
+            }
+        }
+
+        private void FolderContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            var contextMenu = sender as ContextMenu;
+            if (contextMenu?.PlacementTarget is not TextBlock textBlock) return;
+
+            var typeSubmenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item => "Tipo".Equals(item.Header) || (item.Header is string s && s.EndsWith("Tipo")));
+            if (typeSubmenu == null) return;
+
+            string folderName = textBlock.Text;
+            string folderPath = folderName == "Raiz" ? BaseDir : Path.Combine(BaseDir, folderName);
+
+            if (!Directory.Exists(folderPath))
+            {
+                typeSubmenu.IsEnabled = false;
+                return;
+            }
+
+            typeSubmenu.IsEnabled = true;
+
+            var hasPersonalFile = File.Exists(Path.Combine(folderPath, ".personal"));
+            var hasMixtaFile = File.Exists(Path.Combine(folderPath, ".mixta"));
+
+            TipoCarpeta currentType;
+            if (hasMixtaFile)
+                currentType = TipoCarpeta.Ambos;
+            else if (hasPersonalFile)
+                currentType = TipoCarpeta.Personal;
+            else
+                currentType = TipoCarpeta.Laboral;
+
+            foreach (MenuItem item in typeSubmenu.Items)
+            {
+                if (item.Tag is string typeName)
+                {
+                    item.Header = typeName;
+                    if (typeName == currentType.ToString())
+                    {
+                        item.Header = $"✓ {typeName}";
+                    }
+                }
+            }
+        }
+
+        private void FolderTypeMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem clickedItem ||
+                clickedItem.Tag is not string selectedTypeStr ||
+                !Enum.TryParse(selectedTypeStr, out TipoCarpeta selectedType)) return;
+
+            if (clickedItem.Parent is not MenuItem parentMenu ||
+                parentMenu.Parent is not ContextMenu contextMenu ||
+                contextMenu.PlacementTarget is not TextBlock textBlock) return;
+
+            string folderName = textBlock.Text;
+            string folderPath = folderName == "Raiz" ? BaseDir : Path.Combine(BaseDir, folderName);
+
+            if (!Directory.Exists(folderPath)) return;
+
+            var personalFilePath = Path.Combine(folderPath, ".personal");
+            var mixtaFilePath = Path.Combine(folderPath, ".mixta");
+
+            try
+            {
+                // Clean up existing files first
+                if (File.Exists(personalFilePath)) File.Delete(personalFilePath);
+                if (File.Exists(mixtaFilePath)) File.Delete(mixtaFilePath);
+
+                // Create new files based on selection
+                if (selectedType == TipoCarpeta.Personal)
+                {
+                    File.Create(personalFilePath).Close(); // Create and immediately close
+                }
+                else if (selectedType == TipoCarpeta.Ambos)
+                {
+                    File.Create(mixtaFilePath).Close(); // Create and immediately close
+                }
+                // For Laboral, we just needed to delete the files, which we already did.
+
+                // Refresh the main filter to apply changes
+                _groupedSource?.View?.Refresh();
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"No se pudo cambiar el tipo de la carpeta: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1195,6 +1314,52 @@ namespace AccesosLauncher
         {
             var psi = new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true };
             Process.Start(psi);
+        }
+
+        [SupportedOSPlatform("windows6.1")]
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            await LoadItems();
+        }
+
+        private void CreateRootDirectoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            string newFolderName = Interaction.InputBox("Ingrese el nombre de la nueva carpeta en la raíz:", "Crear Directorio en Raíz", "");
+
+            if (string.IsNullOrWhiteSpace(newFolderName))
+            {
+                return; // User cancelled or entered empty name
+            }
+
+            try
+            {
+                // Validate folder name
+                var invalidChars = Path.GetInvalidFileNameChars();
+                if (newFolderName.IndexOfAny(invalidChars) >= 0)
+                {
+                    System.Windows.MessageBox.Show("El nombre de la carpeta contiene caracteres no válidos.",
+                        "Error al crear carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                string newFolderPath = Path.Combine(BaseDir, newFolderName);
+
+                if (Directory.Exists(newFolderPath))
+                {
+                    System.Windows.MessageBox.Show($"Ya existe una carpeta con el nombre '{newFolderName}' en la raíz.",
+                        "Error al crear carpeta", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                Directory.CreateDirectory(newFolderPath);
+                
+                // The FileSystemWatcher will automatically detect the change and refresh the list.
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"No se pudo crear la carpeta:\n{ex.Message}",
+                    "Error al crear carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         #region Drag and Drop Implementation

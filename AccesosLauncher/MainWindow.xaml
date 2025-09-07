@@ -64,6 +64,8 @@
                                     </Style>
                                 </ComboBox.Style>
                             </ComboBox>
+                            <Button Content="Crear directorio en raiz" Click="CreateRootDirectoryButton_Click" Margin="10,0,5,0" Padding="5,2"/>
+                            <Button Content="Actualizar" Click="RefreshButton_Click" Margin="5,0,10,0" Padding="5,2"/>
                             <TextBlock Text="Buscar:" VerticalAlignment="Center" Margin="10,0,8,0" Foreground="White"/>
                             <TextBox x:Name="SearchBox" Width="380"
                                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
@@ -85,10 +87,16 @@
                                         <DataTemplate>
                                             <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="16" Margin="0,12,0,6" Foreground="White">
                                                 <TextBlock.ContextMenu>
-                                                    <ContextMenu>
+                                                    <ContextMenu Loaded="FolderContextMenu_Loaded">
                                                         <MenuItem Header="Renombrar" Click="RenameFolderMenuItem_Click"/>
                                                         <MenuItem Header="Abrir carpeta" Click="OpenFolderMenuItem_Click"/>
                                                         <MenuItem Header="Abrir todos los archivos de la carpeta" Click="OpenAllFilesMenuItem_Click"/>
+                                                        <Separator/>
+                                                        <MenuItem Header="Tipo">
+                                                            <MenuItem Header="Personal" Tag="Personal"/>
+                                                            <MenuItem Header="Laboral" Tag="Laboral"/>
+                                                            <MenuItem Header="Ambos" Tag="Ambos"/>
+                                                        </MenuItem>
                                                         <Separator/>
                                                         <MenuItem Header="Crear nueva carpeta" Click="CreateFolderMenuItem_Click"/>
                                                         <MenuItem Header="Eliminar carpeta" Click="DeleteFolderMenuItem_Click"/>
