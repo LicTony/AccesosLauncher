@@ -64,6 +64,7 @@ namespace AccesosLauncher
         private const int WM_HOTKEY = 0x0312;
         private const uint MOD_ALT = 0x0001;
         private const uint MOD_CONTROL = 0x0002;
+        private const uint MOD_WIN = 0x0008;
 
         private string _searchText = string.Empty;
         private readonly DatabaseHelper _databaseHelper;
@@ -139,11 +140,11 @@ namespace AccesosLauncher
             _source = HwndSource.FromHwnd(_hwnd);
             _source.AddHook(WndProc);
 
-            // Ctrl + Alt + T
-            var vkT = (uint)KeyInterop.VirtualKeyFromKey(Key.T);
-            if (!RegisterHotKey(_hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT, vkT))
+            // Win + Alt + Up
+            var vkT = (uint)KeyInterop.VirtualKeyFromKey(Key.Up);
+            if (!RegisterHotKey(_hwnd, HOTKEY_ID, MOD_WIN | MOD_ALT, vkT))
             {
-                System.Windows.MessageBox.Show("No se pudo registrar la tecla rápida Ctrl+Alt+T (¿ya la usa otra app?).",
+                System.Windows.MessageBox.Show("No se pudo registrar la tecla rápida Win+Alt+Up (¿ya la usa otra app?).",
                     "Atajo global", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -152,7 +153,7 @@ namespace AccesosLauncher
         {
             if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
             {
-                ShowWindowFromTray();
+                ToggleVisibility();
                 handled = true;
             }
             return IntPtr.Zero;
@@ -438,11 +439,11 @@ namespace AccesosLauncher
             {
                 Icon = new System.Drawing.Icon("AccesosLauncher.ico"),
                 Visible = true,
-                Text = "Accesos Launcher (Ctrl+Alt+T)"
+                Text = "Accesos Launcher (Win+Alt+Up)"
             };
 
             var menu = new ContextMenuStrip();
-            var openItem = new ToolStripMenuItem("Abrir (Ctrl+Alt+T)");
+            var openItem = new ToolStripMenuItem("Abrir (Win+Alt+Up)");
             openItem.Click += (_, __) => ShowWindowFromTray();
             var exitItem = new ToolStripMenuItem("Salir");
             exitItem.Click += (_, __) =>
@@ -477,6 +478,18 @@ namespace AccesosLauncher
         {
             Hide();
             ShowInTaskbar = false;
+        }
+
+        private void ToggleVisibility()
+        {
+            if (IsVisible && IsActive)
+            {
+                HideToTray();
+            }
+            else
+            {
+                ShowWindowFromTray();
+            }
         }
 
         [SupportedOSPlatform("windows6.1")]
@@ -1217,7 +1230,7 @@ namespace AccesosLauncher
 
         private void LoadKeyboardShortcuts()
         {
-            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + Alt + T", Description = "Mostrar/ocultar la ventana principal de la aplicación" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Win + Alt + Flecha Arriba", Description = "Mostrar/ocultar la ventana principal de la aplicación" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tecla de Windows + Shift + Flecha Izq. o Der.", Description = "Mover la ventana principal de la aplicación a otro monitor" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Escape", Description = "Ocultar la ventana y minimizar a la bandeja del sistema" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + T", Description = "Cambiar entre tipos de carpeta (Ambos, Personal, Laboral)" });
