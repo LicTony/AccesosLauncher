@@ -1875,6 +1875,141 @@ namespace AccesosLauncher
             await Task.WhenAll(tasks);
         }
 
+        private static readonly System.Net.Http.HttpClient httpClient = new System.Net.Http.HttpClient();
+
+        private async void GetIconButton_Click(object sender, RoutedEventArgs e)
+        {
+            string url = IconUrlTextBox.Text;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                MessageBox.Show("Por favor, ingrese una URL.", "URL Vacía", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            await ProcesarUrlParaIcono(url);
+        }
+
+        private async System.Threading.Tasks.Task ProcesarUrlParaIcono(string url)
+        {
+            try
+            {
+                if (!url.StartsWith("http"))
+                    url = "https://" + url;
+
+                var uri = new Uri(url);
+                string domain = uri.Host;
+
+                string outputDir = Path.Combine(BaseDir, IconsFolderName);
+                Directory.CreateDirectory(outputDir);
+
+                string faviconUrl = await ObtenerUrlFavicon(url);
+
+                if (faviconUrl != null)
+                {
+                    await DescargarYConvertirFavicon(faviconUrl, domain, outputDir);
+                }
+                else
+                {
+                    MessageBox.Show("No se pudo encontrar un favicon para esta URL.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async System.Threading.Tasks.Task<string> ObtenerUrlFavicon(string url)
+        {
+            var uri = new Uri(url);
+            string baseUrl = $"{uri.Scheme}://{uri.Host}";
+
+            // Método 1: Intentar rutas estándar
+            string[] rutasEstandar = {
+                "/favicon.ico",
+                "/favicon.png",
+                "/apple-touch-icon.png",
+                "/apple-touch-icon-precomposed.png"
+            };
+
+            foreach (string ruta in rutasEstandar)
+            {
+                string faviconUrl = baseUrl + ruta;
+                if (await ExisteFavicon(faviconUrl))
+                {
+                    return faviconUrl;
+                }
+            }
+
+            // Método 2: Usar servicio de Google como fallback
+            return $"https://www.google.com/s2/favicons?domain={uri.Host}&sz=64";
+        }
+
+        private async System.Threading.Tasks.Task<bool> ExisteFavicon(string url)
+        {
+            try
+            {
+                var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Head, url);
+                var response = await httpClient.SendAsync(request);
+                return response.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async System.Threading.Tasks.Task DescargarYConvertirFavicon(string faviconUrl, string domain, string outputDir)
+        {
+            try
+            {
+                byte[] faviconData = await httpClient.GetByteArrayAsync(faviconUrl);
+                string fileName = LimpiarNombreArchivo(domain);
+                string outputPath = Path.Combine(outputDir, $"{fileName}.ico");
+
+                if (faviconUrl.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
+                {
+                    await File.WriteAllBytesAsync(outputPath, faviconData);
+                    MessageBox.Show($"Favicon guardado: {outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                using (var memoryStream = new MemoryStream(faviconData))
+                {
+                    using (var image = System.Drawing.Image.FromStream(memoryStream))
+                    {
+                        var favicon = RedimensionarImagen(image, 32, 32);
+                        using (var fileStream = new FileStream(outputPath, FileMode.Create))
+                        {
+                            favicon.Save(fileStream, System.Drawing.Imaging.ImageFormat.Icon);
+                        }
+                        MessageBox.Show($"Favicon convertido y guardado: {outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                 MessageBox.Show($"Error al descargar o convertir el favicon: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private System.Drawing.Bitmap RedimensionarImagen(System.Drawing.Image imagen, int ancho, int alto)
+        {
+            var bitmap = new System.Drawing.Bitmap(ancho, alto);
+            using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+            {
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                graphics.DrawImage(imagen, 0, 0, ancho, alto);
+            }
+            return bitmap;
+        }
+
+        private string LimpiarNombreArchivo(string nombre)
+        {
+            string patron = @"[<>:""/\|?*]";
+            return System.Text.RegularExpressions.Regex.Replace(nombre, patron, "_");
+        }
+
         #endregion
     }
 
