@@ -39,6 +39,7 @@ namespace AccesosLauncher
         };
 
         public static string BaseDir { get; set; } = App.Configuration["BaseDir"] ?? string.Empty;
+        public static string IconsFolderName { get; set; } = App.Configuration["IconsFolderName"] ?? string.Empty;
 
         // Extensiones ejecutables: PATHEXT + .lnk + .url
         private static readonly HashSet<string> ExecExtensions = InitExecExtensions();
@@ -217,9 +218,9 @@ namespace AccesosLauncher
 
             return SelectedTipoCarpeta switch
             {
-                TipoCarpeta.Ambos => true,
-                TipoCarpeta.Personal => hasPersonalFile || hasMixtaFile,
-                TipoCarpeta.Laboral => !hasPersonalFile,
+                TipoCarpeta.Ambos => hasMixtaFile, // Muestra solo los que tienen .mixta
+                TipoCarpeta.Personal => hasPersonalFile || hasMixtaFile, // Muestra personales y mixtos
+                TipoCarpeta.Laboral => !hasPersonalFile && !hasMixtaFile, // Muestra solo los que no tienen ninguna marca
                 _ => true
             };
         }
@@ -265,7 +266,7 @@ namespace AccesosLauncher
                 // Get all directories first, including empty ones (but excluding hidden ones)
                 var directories = existed 
                     ? Directory.EnumerateDirectories(BaseDir, "*", SearchOption.AllDirectories)
-                        .Where(dir => !IsHidden(dir))
+                        .Where(dir => !IsHidden(dir) && Path.GetFileName(dir) != IconsFolderName)
                     : [];
                 
                 // Get all launchable files (but excluding those in hidden directories)
@@ -522,16 +523,18 @@ namespace AccesosLauncher
                 {
                     var json = File.ReadAllText(settingsPath);
                     var settings = JsonSerializer.Deserialize<UserSettings>(json);
-                    SelectedTipoCarpeta = settings?.SelectedTipoCarpeta ?? TipoCarpeta.Ambos;
+                    SelectedTipoCarpeta = settings?.SelectedTipoCarpeta ?? TipoCarpeta.Laboral;
                 }
                 else
                 {
-                    SelectedTipoCarpeta = TipoCarpeta.Ambos;
+                    // This is the first run, set default to Laboral
+                    SelectedTipoCarpeta = TipoCarpeta.Laboral;
                 }
             }
             catch (Exception)
             {
-                SelectedTipoCarpeta = TipoCarpeta.Ambos;
+                // In case of error, also default to Laboral
+                SelectedTipoCarpeta = TipoCarpeta.Laboral;
             }
         }
 

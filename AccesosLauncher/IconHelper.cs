@@ -26,9 +26,32 @@ namespace AccesosLauncher
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 return GetDefaultIcon();
 
-            // Special handling for .url files to get the default browser icon
             if (path.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
             {
+                // First, try to get the specific icon from the .url file itself
+                try
+                {
+                    var specificIconPath = GetIconPathFromUrlFile(path);
+                    if (!string.IsNullOrEmpty(specificIconPath) && File.Exists(specificIconPath))
+                    {
+                        if (Cache.TryGetValue(path, out var specificIcon))
+                            return specificIcon;
+
+                        using var ico = Icon.ExtractAssociatedIcon(specificIconPath);
+                        if (ico != null)
+                        {
+                            var source = ConvertIconToBitmapSource(ico);
+                            Cache[path] = source; // Cache using the .url file's path as the key
+                            return source;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fall through to default browser icon logic if parsing or icon extraction fails
+                }
+
+                // Fallback: get the default browser icon if no specific icon is found
                 const string browserCacheKey = "::DEFAULT_BROWSER_ICON::";
                 if (Cache.TryGetValue(browserCacheKey, out var browserIcon))
                     return browserIcon;
@@ -71,6 +94,29 @@ namespace AccesosLauncher
             {
                 return GetDefaultIcon();
             }
+        }
+
+        private static string? GetIconPathFromUrlFile(string urlFilePath)
+        {
+            try
+            {
+                // .url files are INI-like text files. We can read them line by line.
+                var lines = File.ReadAllLines(urlFilePath);
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("IconFile=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Extract the path, which might have environment variables
+                        var iconPath = line.Substring("IconFile=".Length).Trim();
+                        return Environment.ExpandEnvironmentVariables(iconPath);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore errors (e.g., file not found, access denied). We'll fall back.
+            }
+            return null;
         }
 
         [SupportedOSPlatform("windows")]
