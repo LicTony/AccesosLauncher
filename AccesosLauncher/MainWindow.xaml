@@ -6,7 +6,8 @@
         Loaded="Window_Loaded"
         Closing="Window_Closing"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None" AllowsTransparency="True">
+        WindowStyle="None" AllowsTransparency="True"
+        Visibility="Hidden" ShowInTaskbar="False">
     <Window.Resources>
         <CollectionViewSource x:Key="GroupedItems" Source="{Binding Items}">
             <CollectionViewSource.GroupDescriptions>

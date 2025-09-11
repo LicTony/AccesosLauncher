@@ -33,6 +33,10 @@ namespace AccesosLauncher
             }
 
             base.OnStartup(e);
+
+            MainWindow = new MainWindow();
+            MainWindow.Show();
+            // The MainWindow's own Loaded event will handle hiding to tray
         }
     }
 }

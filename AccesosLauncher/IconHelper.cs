@@ -1,15 +1,14 @@
 using System;
 using System.Collections.Concurrent;
+using System.IO;
+using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Windows;
-using System.Windows.Interop;
+using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Drawing;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
-using System.Text;
+using Icon = System.Drawing.Icon;
 
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Interoperability", "CA1401:P/Invokes should not be visible", Justification = "P/Invoke methods are internal implementation details")]
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Interoperability", "SYSLIB1054:Use 'LibraryImportAttribute' instead of 'DllImportAttribute'", Justification = "Complex marshalling scenarios require DllImport")]
@@ -19,6 +18,7 @@ namespace AccesosLauncher
     internal static class IconHelper
     {
         private static readonly ConcurrentDictionary<string, ImageSource> Cache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly HttpClient HttpClient = new();
 
         [SupportedOSPlatform("windows")]
         public static ImageSource GetIconImageSource(string path)
@@ -282,5 +282,44 @@ namespace AccesosLauncher
         private const uint SHGFI_USEFILEATTRIBUTES = 0x000000010;
 
         #endregion
+
+        [SupportedOSPlatform("windows")]
+        public static async Task<ImageSource?> GetFaviconAsync(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return null;
+
+            var faviconUrl = $"https://{uri.Host}/favicon.ico";
+
+            if (Cache.TryGetValue(faviconUrl, out var cachedIcon))
+                return cachedIcon;
+
+            try
+            {
+                var response = await HttpClient.GetAsync(faviconUrl);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var imageBytes = await response.Content.ReadAsByteArrayAsync();
+                if (imageBytes == null || imageBytes.Length == 0)
+                    return null;
+
+                using var stream = new MemoryStream(imageBytes);
+                var bitmapImage = new BitmapImage();
+                bitmapImage.BeginInit();
+                bitmapImage.StreamSource = stream;
+                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                bitmapImage.EndInit();
+                bitmapImage.Freeze();
+
+                Cache[faviconUrl] = bitmapImage;
+                return bitmapImage;
+            }
+            catch
+            {
+                // Could be network error, invalid icon format, etc.
+                return null;
+            }
+        }
     }
 }

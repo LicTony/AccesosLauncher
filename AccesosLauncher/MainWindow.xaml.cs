@@ -187,7 +187,8 @@ namespace AccesosLauncher
             EnsureBaseDir();
             _databaseHelper.InitializeDatabase();
             LoadUserSettings();
-            await LoadItems(); // async
+            await LoadItems(); // Carga inicial síncrona de la estructura
+            await LoadFaviconsAsync(); // Lanza la carga asíncrona de favicons en segundo plano
             SetupWatcher();
             SetupTrayIcon();
 
@@ -220,7 +221,7 @@ namespace AccesosLauncher
             {
                 TipoCarpeta.Ambos => hasMixtaFile, // Muestra solo los que tienen .mixta
                 TipoCarpeta.Personal => hasPersonalFile || hasMixtaFile, // Muestra personales y mixtos
-                TipoCarpeta.Laboral => !hasPersonalFile && !hasMixtaFile, // Muestra solo los que no tienen ninguna marca
+                TipoCarpeta.Laboral => !hasPersonalFile || hasMixtaFile, // Muestra no personales y mixtos
                 _ => true
             };
         }
@@ -289,6 +290,7 @@ namespace AccesosLauncher
 
                         var name = Path.GetFileNameWithoutExtension(f);
                         var icon = IconHelper.GetIconImageSource(f);
+                        var itemType = f.EndsWith(".url", StringComparison.OrdinalIgnoreCase) ? "Url" : "File";
 
                         tmp.Add(new AppItem
                         {
@@ -296,7 +298,8 @@ namespace AccesosLauncher
                             FullPath = f,
                             RelativeDirectory = rel,
                             Icon = icon,
-                            IsEmptyFolder = false
+                            IsEmptyFolder = false,
+                            ItemType = itemType
                         });
                     }
                     
@@ -305,9 +308,10 @@ namespace AccesosLauncher
                     {
                         // Check if this directory is already represented by files
                         var relDir = Path.GetRelativePath(BaseDir, dir);
-                        bool hasFilesInDir = tmp.Any(item => item.RelativeDirectory == relDir);
-                        
-                        // If directory is empty and not already represented, add a placeholder
+                        var relDirWithSeparator = relDir.EndsWith(Path.DirectorySeparatorChar.ToString()) ? relDir : relDir + Path.DirectorySeparatorChar;
+                        bool hasFilesInDir = tmp.Any(item => item.RelativeDirectory == relDir || item.RelativeDirectory.StartsWith(relDirWithSeparator));
+
+                        // If directory is not represented by any launchable files, add a placeholder
                         if (!hasFilesInDir)
                         {
                             var dirName = Path.GetFileName(dir);
@@ -609,7 +613,27 @@ namespace AccesosLauncher
                     try
                     {
                         _databaseHelper.LogAccess(item.FullPath);
-                        var psi = new ProcessStartInfo(item.FullPath)
+
+                        string pathToOpen = item.FullPath;
+                        // For .url files, we need to read the URL from within the file
+                        if (item.ItemType == "Url")
+                        {
+                            try
+                            {
+                                var lines = File.ReadAllLines(item.FullPath);
+                                var urlLine = lines.FirstOrDefault(l => l.StartsWith("URL=", StringComparison.OrdinalIgnoreCase));
+                                if (urlLine != null)
+                                {
+                                    pathToOpen = urlLine.Substring(4);
+                                }
+                            }
+                            catch
+                            {
+                                // If reading fails, we'll just try to open the .url file itself, and let Windows handle it.
+                            }
+                        }
+
+                        var psi = new ProcessStartInfo(pathToOpen)
                         {
                             UseShellExecute = true,
                             WorkingDirectory = Path.GetDirectoryName(item.FullPath) ?? BaseDir
@@ -1335,6 +1359,7 @@ namespace AccesosLauncher
         private async void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             await LoadItems();
+            await LoadFaviconsAsync();
         }
 
         private void CreateRootDirectoryButton_Click(object sender, RoutedEventArgs e)
@@ -1820,6 +1845,34 @@ namespace AccesosLauncher
                 }
             }
             return null;
+        }
+
+        [SupportedOSPlatform("windows")]
+        private async Task LoadFaviconsAsync()
+        {
+            var urlItems = Items.Where(i => i.ItemType == "Url").ToList();
+
+            var tasks = urlItems.Select(async item =>
+            {
+                try
+                {
+                    var url = File.ReadLines(item.FullPath).FirstOrDefault(line => line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase))?.Substring(4);
+                    if (url != null)
+                    {
+                        var favicon = await IconHelper.GetFaviconAsync(url);
+                        if (favicon != null)
+                        {
+                            await Dispatcher.InvokeAsync(() => item.Icon = favicon);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore if file can't be read or other errors
+                }
+            });
+
+            await Task.WhenAll(tasks);
         }
 
         #endregion
