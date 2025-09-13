@@ -193,7 +193,7 @@ namespace AccesosLauncher
             SetupTrayIcon();
 
             // Arranca en segundo plano
-            HideToTray();
+            //HideToTray();
         }
 
         private void GroupedSource_Filter(object sender, FilterEventArgs e)
