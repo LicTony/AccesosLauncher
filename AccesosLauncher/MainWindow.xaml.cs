@@ -230,10 +230,18 @@ namespace AccesosLauncher
         {
             var q = _searchText?.Trim();
             if (string.IsNullOrEmpty(q)) return true;
+
             var c = StringComparison.OrdinalIgnoreCase;
-            return item.Name.Contains(q, c) ||
-                   item.FullPath.Contains(q, c) ||
-                   item.RelativeDirectory.Contains(q, c);
+            // Divide la búsqueda en términos usando '%' como separador
+            var searchTerms = q.Split(new[] { '%' }, StringSplitOptions.RemoveEmptyEntries);
+
+            // Verifica que TODOS los términos de búsqueda estén presentes en el NOMBRE del item
+            return searchTerms.All(term =>
+            {
+                var trimmedTerm = term.Trim();
+                if (string.IsNullOrEmpty(trimmedTerm)) return true;
+                return item.Name.Contains(trimmedTerm, c);
+            });
         }
 
         private static void EnsureBaseDir()
