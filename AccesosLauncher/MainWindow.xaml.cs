@@ -25,6 +25,7 @@ using Application = System.Windows.Application;
 using System.Reflection;
 using DragDropEffects = System.Windows.DragDropEffects;
 using MessageBox = System.Windows.MessageBox;
+using System.Linq;
 
 
 
@@ -2019,6 +2020,78 @@ namespace AccesosLauncher
         }
 
         #endregion
+
+
+        private void SearchBox_KeyDown(object? sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                var view = CollectionViewSource.GetDefaultView(ListViewItems.ItemsSource);
+                var visibleItems = view.Cast<AppItem>().ToList();
+
+                if (visibleItems.Count == 1)
+                {
+                    var singleItem = visibleItems.First();
+                    LaunchAppItem(singleItem);
+                    e.Handled = true;
+                }
+            }
+        }
+
+        private void LaunchAppItem(AppItem item)
+        {
+            if (item.IsEmptyFolder)
+            {
+                try
+                {
+                    Process.Start("explorer.exe", item.FullPath);
+                    HideToTray();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"No se pudo abrir la carpeta:\n{item.FullPath}\n\n{ex.Message}",
+                        "Error al abrir carpeta", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                try
+                {
+                    _databaseHelper.LogAccess(item.FullPath);
+
+                    string pathToOpen = item.FullPath;
+                    if (item.ItemType == "Url")
+                    {
+                        try
+                        {
+                            var urlLine = File.ReadLines(item.FullPath).FirstOrDefault(l => l.StartsWith("URL=", StringComparison.OrdinalIgnoreCase));
+                            if (urlLine != null)
+                            {
+                                pathToOpen = urlLine.Substring(4);
+                            }
+                        }
+                        catch
+                        {
+                            // Si la lectura falla, se intenta abrir el .url directamente
+                        }
+                    }
+
+                    var psi = new ProcessStartInfo(pathToOpen)
+                    {
+                        UseShellExecute = true,
+                        WorkingDirectory = Path.GetDirectoryName(item.FullPath) ?? BaseDir
+                    };
+                    Process.Start(psi);
+                    HideToTray();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"No se pudo abrir:\n{item.FullPath}\n\n{ex.Message}", "Error al abrir", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+
     }
 
     public class SettingEntry : INotifyPropertyChanged

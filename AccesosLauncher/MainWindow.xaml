@@ -71,7 +71,8 @@
                             <TextBox x:Name="SearchBox" Width="380"
                                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalAlignment="Center"
-                                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"/>
+                                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"
+                                     KeyDown="SearchBox_KeyDown"/>
                             <TextBlock Text="{Binding ResultCountText}" Margin="12,0,0,0" VerticalAlignment="Center"
                                        Foreground="LightGray"/>
                         </StackPanel>
