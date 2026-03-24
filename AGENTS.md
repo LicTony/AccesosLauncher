@@ -24,6 +24,13 @@ AccesosLauncher is a C# WPF desktop application for Windows that manages quick-a
 
 **Requirements:** Visual Studio 2022+ or .NET 10 SDK with `net10.0-windows7.0` workload.
 
+**Prerequisites:**
+
+* PowerShell Core (`pwsh`) — required for "Carpeta de Trabajo" feature:
+  ```powershell
+  winget install Microsoft.PowerShell
+  ```
+
 **Build:**
 ```
 dotnet build AccesosLauncher.sln
