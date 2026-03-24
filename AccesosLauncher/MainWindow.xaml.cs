@@ -26,6 +26,9 @@ using System.Reflection;
 using DragDropEffects = System.Windows.DragDropEffects;
 using MessageBox = System.Windows.MessageBox;
 using System.Linq;
+using MenuItem = System.Windows.Controls.MenuItem;
+using ContextMenu = System.Windows.Controls.ContextMenu;
+using DataGrid = System.Windows.Controls.DataGrid;
 
 
 
@@ -2502,12 +2505,12 @@ namespace AccesosLauncher
                 button.Content = stack;
                 button.Click += ProyectoAcceso_Click;
 
-                var contextMenu = new System.Windows.Controls.ContextMenu();
-                var renameItem = new System.Windows.Controls.MenuItem { Header = "Renombrar" };
+                var contextMenu = new ContextMenu();
+                var renameItem = new MenuItem { Header = "Renombrar" };
                 renameItem.Click += (_, _) => RenameProyectoAcceso(acceso);
-                var deleteItem = new System.Windows.Controls.MenuItem { Header = "Eliminar" };
+                var deleteItem = new MenuItem { Header = "Eliminar" };
                 deleteItem.Click += (_, _) => DeleteProyectoAcceso(acceso);
-                var openLocationItem = new System.Windows.Controls.MenuItem
+                var openLocationItem = new MenuItem
                 {
                     Header = "Abrir ubicación del archivo",
                     IsEnabled = acceso.PathExiste
