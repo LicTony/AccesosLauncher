@@ -173,19 +173,7 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Nombre" Binding="{Binding Nombre}" Width="*"/>
                                 <DataGridTextColumn Header="Activo" Binding="{Binding ActivoIcono}" Width="90"/>
-                                <DataGridTextColumn Header="Descripcion" Binding="{Binding DescripcionCortaTruncada}" Width="2*">
-                                    <DataGridTextColumn.CellStyle>
-                                        <Style TargetType="DataGridCell" BasedOn="{StaticResource MaterialDesignDataGridCell}">
-                                            <Setter Property="VerticalContentAlignment" Value="Top"/>
-                                        </Style>
-                                    </DataGridTextColumn.CellStyle>
-                                    <DataGridTextColumn.ElementStyle>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="TextWrapping" Value="Wrap"/>
-                                            <Setter Property="Margin" Value="16,16,16,16"/>
-                                        </Style>
-                                    </DataGridTextColumn.ElementStyle>
-                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Descripcion" Binding="{Binding DescripcionCortaTruncada}" Width="2*"/>
                                 <DataGridTextColumn Header="Ultimo Acceso" Binding="{Binding FechaUltimoAcceso, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}" Width="140"/>
                             </DataGrid.Columns>
                         </DataGrid>
