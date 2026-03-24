@@ -600,21 +600,11 @@ namespace AccesosLauncher
             
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                var proyectosTab = FindVisualChild<Grid>(MainTabControl);
-                if (proyectosTab == null) return;
-                
-                var contentGrid = proyectosTab.Children.OfType<Grid>().ElementAtOrDefault(1);
-                if (contentGrid == null || contentGrid.RowDefinitions.Count < 5) return;
-                
-                var splitGrid = contentGrid.Children.OfType<Grid>().ElementAtOrDefault(2);
-                if (splitGrid == null || splitGrid.ColumnDefinitions.Count < 2) return;
-                
-                var descriptionColumn = splitGrid.ColumnDefinitions[0];
-                var accesosColumn = splitGrid.ColumnDefinitions[1];
+                if (colProyectoDescripcion == null || colProyectoAccesos == null) return;
                 
                 var proportion = _userSettings.ProyectosSplitProportion;
-                descriptionColumn.Width = new GridLength(proportion, GridUnitType.Star);
-                accesosColumn.Width = new GridLength(1 - proportion, GridUnitType.Star);
+                colProyectoDescripcion.Width = new GridLength(proportion, GridUnitType.Star);
+                colProyectoAccesos.Width = new GridLength(1 - proportion, GridUnitType.Star);
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
@@ -643,17 +633,10 @@ namespace AccesosLauncher
             {
                 try
                 {
-                    var proyectosTab = FindVisualChild<Grid>(MainTabControl);
-                    if (proyectosTab == null) return;
+                    if (colProyectoDescripcion == null || colProyectoAccesos == null) return;
                     
-                    var contentGrid = proyectosTab.Children.OfType<Grid>().ElementAtOrDefault(1);
-                    if (contentGrid == null || contentGrid.RowDefinitions.Count < 5) return;
-                    
-                    var splitGrid = contentGrid.Children.OfType<Grid>().ElementAtOrDefault(2);
-                    if (splitGrid == null || splitGrid.ColumnDefinitions.Count < 2) return;
-                    
-                    var descWidth = splitGrid.ColumnDefinitions[0].Width.Value;
-                    var totalWidth = descWidth + splitGrid.ColumnDefinitions[1].Width.Value;
+                    var descWidth = colProyectoDescripcion.Width.Value;
+                    var totalWidth = descWidth + colProyectoAccesos.Width.Value;
                     
                     if (totalWidth > 0)
                     {
@@ -2384,7 +2367,6 @@ namespace AccesosLauncher
             {
                 LoadProyectoDescripcion();
                 LoadProyectoAccesos();
-                UpdateProyectoLastAccess();
                 UpdateActivarDesactivarButton();
             }
             else
@@ -2592,6 +2574,8 @@ namespace AccesosLauncher
                         };
                         Process.Start(psi);
                     }
+
+                    UpdateProyectoLastAccess();
                 }
                 catch (Exception ex)
                 {

@@ -180,8 +180,9 @@
                         <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch" Background="Gray" DragCompleted="GridSplitterProyectos_DragCompleted"/>
                         <Grid Grid.Row="4" Margin="10,5,10,10">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="6*" MinWidth="200"/>
-                                <ColumnDefinition Width="5*" MinWidth="200"/>
+                                <ColumnDefinition x:Name="colProyectoDescripcion" Width="6*" MinWidth="200"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition x:Name="colProyectoAccesos" Width="5*" MinWidth="200"/>
                             </Grid.ColumnDefinitions>
                             <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,5,0">
                                 <DockPanel>
@@ -200,7 +201,8 @@
                                                  Margin="5"/>
                                 </DockPanel>
                             </Border>
-                            <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
+                            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="Gray" DragCompleted="GridSplitterProyectos_DragCompleted"/>
+                            <Border Grid.Column="2" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
                                 <DockPanel>
                                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
                                         <TextBlock Text="Accesos" Foreground="White" FontWeight="Bold" VerticalAlignment="Center"/>
