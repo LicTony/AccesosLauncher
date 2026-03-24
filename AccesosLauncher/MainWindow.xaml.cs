@@ -47,10 +47,47 @@ namespace AccesosLauncher
 
         public ObservableCollection<AppItem> Items { get; } = [];
         public ObservableCollection<LoggedAppItem> MostUsedItems { get; } = [];
+        public ObservableCollection<Models.Proyecto> Proyectos { get; } = [];
+        public ObservableCollection<Models.ProyectoAcceso> ProyectoAccesos { get; } = [];
 
         public ObservableCollection<SettingEntry> AppSettings { get; } = [];
         public ObservableCollection<KeyboardShortcut> KeyboardShortcuts { get; } = [];
         private bool _settingsLoaded;
+        
+        private Models.Proyecto? _selectedProyecto;
+        public Models.Proyecto? SelectedProyecto
+        {
+            get => _selectedProyecto;
+            set
+            {
+                if (_selectedProyecto != value)
+                {
+                    _selectedProyecto = value;
+                    OnPropertyChanged(nameof(SelectedProyecto));
+                    OnSelectedProyectoChanged();
+                }
+            }
+        }
+
+        private string _buscarProyectoText = string.Empty;
+        public string BuscarProyectoText
+        {
+            get => _buscarProyectoText;
+            set
+            {
+                if (_buscarProyectoText != value)
+                {
+                    _buscarProyectoText = value;
+                    OnPropertyChanged(nameof(BuscarProyectoText));
+                    DebounceSearchProyectos();
+                }
+            }
+        }
+
+        private Timer? _searchDebounceTimer;
+        private bool _proyectosLoaded;
+        private bool _isEditingDescripcion;
+        private string _originalDescripcionText = string.Empty;
 
         private CollectionViewSource? _groupedSource;
         private FileSystemWatcher? _watcher;
@@ -234,7 +271,7 @@ namespace AccesosLauncher
 
             var c = StringComparison.OrdinalIgnoreCase;
             // Divide la búsqueda en términos usando '%' como separador
-            var searchTerms = q.Split(new[] { '%' }, StringSplitOptions.RemoveEmptyEntries);
+            var searchTerms = q.Split(['%'], StringSplitOptions.RemoveEmptyEntries);
 
             // Verifica que TODOS los términos de búsqueda estén presentes en el NOMBRE del item
             return searchTerms.All(term =>
@@ -527,6 +564,8 @@ namespace AccesosLauncher
             _debounceTimer?.Dispose();
         }
 
+        private UserSettings? _userSettings;
+        
         private void LoadUserSettings()
         {
             try
@@ -535,20 +574,45 @@ namespace AccesosLauncher
                 if (File.Exists(settingsPath))
                 {
                     var json = File.ReadAllText(settingsPath);
-                    var settings = JsonSerializer.Deserialize<UserSettings>(json);
-                    SelectedTipoCarpeta = settings?.SelectedTipoCarpeta ?? TipoCarpeta.Laboral;
+                    _userSettings = JsonSerializer.Deserialize<UserSettings>(json);
+                    SelectedTipoCarpeta = _userSettings?.SelectedTipoCarpeta ?? TipoCarpeta.Laboral;
+                    ApplyProyectosSplitProportion();
                 }
                 else
                 {
-                    // This is the first run, set default to Laboral
+                    _userSettings = new UserSettings();
                     SelectedTipoCarpeta = TipoCarpeta.Laboral;
                 }
             }
             catch (Exception)
             {
-                // In case of error, also default to Laboral
+                _userSettings = new UserSettings();
                 SelectedTipoCarpeta = TipoCarpeta.Laboral;
             }
+        }
+
+        private void ApplyProyectosSplitProportion()
+        {
+            if (_userSettings?.ProyectosSplitProportion == null || _userSettings.ProyectosSplitProportion <= 0) return;
+            
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var proyectosTab = FindVisualChild<Grid>(MainTabControl);
+                if (proyectosTab == null) return;
+                
+                var contentGrid = proyectosTab.Children.OfType<Grid>().ElementAtOrDefault(1);
+                if (contentGrid == null || contentGrid.RowDefinitions.Count < 5) return;
+                
+                var splitGrid = contentGrid.Children.OfType<Grid>().ElementAtOrDefault(2);
+                if (splitGrid == null || splitGrid.ColumnDefinitions.Count < 2) return;
+                
+                var descriptionColumn = splitGrid.ColumnDefinitions[0];
+                var accesosColumn = splitGrid.ColumnDefinitions[1];
+                
+                var proportion = _userSettings.ProyectosSplitProportion;
+                descriptionColumn.Width = new GridLength(proportion, GridUnitType.Star);
+                accesosColumn.Width = new GridLength(1 - proportion, GridUnitType.Star);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private void SaveUserSettings()
@@ -556,14 +620,46 @@ namespace AccesosLauncher
             try
             {
                 var settingsPath = Path.Combine(AppContext.BaseDirectory, "usersettings.json");
-                var settings = new UserSettings { SelectedTipoCarpeta = this.SelectedTipoCarpeta };
+                CaptureProyectosSplitProportion();
+                var settings = new UserSettings 
+                { 
+                    SelectedTipoCarpeta = this.SelectedTipoCarpeta,
+                    ProyectosSplitProportion = _userSettings?.ProyectosSplitProportion ?? 0.6
+                };
                 var json = JsonSerializer.Serialize(settings);
                 File.WriteAllText(settingsPath, json);
             }
             catch (Exception)
             {
-                // ignore
             }
+        }
+
+        private void CaptureProyectosSplitProportion()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    var proyectosTab = FindVisualChild<Grid>(MainTabControl);
+                    if (proyectosTab == null) return;
+                    
+                    var contentGrid = proyectosTab.Children.OfType<Grid>().ElementAtOrDefault(1);
+                    if (contentGrid == null || contentGrid.RowDefinitions.Count < 5) return;
+                    
+                    var splitGrid = contentGrid.Children.OfType<Grid>().ElementAtOrDefault(2);
+                    if (splitGrid == null || splitGrid.ColumnDefinitions.Count < 2) return;
+                    
+                    var descWidth = splitGrid.ColumnDefinitions[0].Width.Value;
+                    var totalWidth = descWidth + splitGrid.ColumnDefinitions[1].Width.Value;
+                    
+                    if (totalWidth > 0)
+                    {
+                        _userSettings ??= new UserSettings();
+                        _userSettings.ProyectosSplitProportion = descWidth / totalWidth;
+                    }
+                }
+                catch { }
+            }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
         private void MainWindow_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -633,7 +729,7 @@ namespace AccesosLauncher
                                 var urlLine = lines.FirstOrDefault(l => l.StartsWith("URL=", StringComparison.OrdinalIgnoreCase));
                                 if (urlLine != null)
                                 {
-                                    pathToOpen = urlLine.Substring(4);
+                                    pathToOpen = urlLine[4..];
                                 }
                             }
                             catch
@@ -1175,7 +1271,6 @@ namespace AccesosLauncher
         {
             if (e.Source is System.Windows.Controls.TabControl)
             {
-                // Usar Dispatcher para asegurar que los controles estén completamente cargados
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     switch (MainTabControl.SelectedIndex)
@@ -1183,25 +1278,30 @@ namespace AccesosLauncher
                         case 0: // "Accesos" tab
                             SearchBox.Focus();
                             break;
-                        case 1: // "Más Usados" tab
+                        case 1: // "Proyectos" tab
+                            if (!_proyectosLoaded)
+                            {
+                                LoadProyectos();
+                                _proyectosLoaded = true;
+                            }
+                            txtBuscarProyecto?.Focus();
+                            break;
+                        case 2: // "Más Usados" tab
                             LoadMostUsedItems();
-                            // Enfocar la grilla después de cargar los datos
                             ListViewItems.Focus();
                             break;
-                        case 2: // "Configuracion" tab
+                        case 3: // "Configuracion" tab
                             if (!_settingsLoaded)
                             {
                                 LoadSettings();
                             }
-                            // Enfocar la grilla de configuración
                             if (MainTabControl.SelectedContent is DockPanel dockPanel)
                             {
                                 var dataGrid = FindVisualChild<DataGrid>(dockPanel);
                                 dataGrid?.Focus();
                             }
                             break;
-                        case 3: // "Acerca de" tab
-                            // No se requiere acción especial para esta pestaña
+                        case 4: // "Acerca de" tab
                             break;
                     }
                 }), System.Windows.Threading.DispatcherPriority.ContextIdle);
@@ -1865,7 +1965,7 @@ namespace AccesosLauncher
             {
                 try
                 {
-                    var url = File.ReadLines(item.FullPath).FirstOrDefault(line => line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase))?.Substring(4);
+                    var url = File.ReadLines(item.FullPath).FirstOrDefault(line => line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase))?[4..];
                     if (url != null)
                     {
                         var favicon = await IconHelper.GetFaviconAsync(url);
@@ -1884,7 +1984,7 @@ namespace AccesosLauncher
             await Task.WhenAll(tasks);
         }
 
-        private static readonly System.Net.Http.HttpClient httpClient = new System.Net.Http.HttpClient();
+        private static readonly System.Net.Http.HttpClient httpClient = new();
 
         private async void GetIconButton_Click(object sender, RoutedEventArgs e)
         {
@@ -1898,7 +1998,7 @@ namespace AccesosLauncher
             await ProcesarUrlParaIcono(url);
         }
 
-        private async System.Threading.Tasks.Task ProcesarUrlParaIcono(string url)
+        private static async System.Threading.Tasks.Task ProcesarUrlParaIcono(string url)
         {
             try
             {
@@ -1928,18 +2028,18 @@ namespace AccesosLauncher
             }
         }
 
-        private async System.Threading.Tasks.Task<string> ObtenerUrlFavicon(string url)
+        private static async System.Threading.Tasks.Task<string> ObtenerUrlFavicon(string url)
         {
             var uri = new Uri(url);
             string baseUrl = $"{uri.Scheme}://{uri.Host}";
 
             // Método 1: Intentar rutas estándar
-            string[] rutasEstandar = {
+            string[] rutasEstandar = [
                 "/favicon.ico",
                 "/favicon.png",
                 "/apple-touch-icon.png",
                 "/apple-touch-icon-precomposed.png"
-            };
+            ];
 
             foreach (string ruta in rutasEstandar)
             {
@@ -1954,7 +2054,7 @@ namespace AccesosLauncher
             return $"https://www.google.com/s2/favicons?domain={uri.Host}&sz=64";
         }
 
-        private async System.Threading.Tasks.Task<bool> ExisteFavicon(string url)
+        private static async System.Threading.Tasks.Task<bool> ExisteFavicon(string url)
         {
             try
             {
@@ -1968,7 +2068,7 @@ namespace AccesosLauncher
             }
         }
 
-        private async System.Threading.Tasks.Task DescargarYConvertirFavicon(string faviconUrl, string domain, string outputDir)
+        private static async System.Threading.Tasks.Task DescargarYConvertirFavicon(string faviconUrl, string domain, string outputDir)
         {
             try
             {
@@ -1983,18 +2083,14 @@ namespace AccesosLauncher
                     return;
                 }
 
-                using (var memoryStream = new MemoryStream(faviconData))
+                using var memoryStream = new MemoryStream(faviconData);
+                using var image = System.Drawing.Image.FromStream(memoryStream);
+                var favicon = RedimensionarImagen(image, 32, 32);
+                using (var fileStream = new FileStream(outputPath, FileMode.Create))
                 {
-                    using (var image = System.Drawing.Image.FromStream(memoryStream))
-                    {
-                        var favicon = RedimensionarImagen(image, 32, 32);
-                        using (var fileStream = new FileStream(outputPath, FileMode.Create))
-                        {
-                            favicon.Save(fileStream, System.Drawing.Imaging.ImageFormat.Icon);
-                        }
-                        MessageBox.Show($"Favicon convertido y guardado: {outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
-                    }
+                    favicon.Save(fileStream, System.Drawing.Imaging.ImageFormat.Icon);
                 }
+                MessageBox.Show($"Favicon convertido y guardado: {outputPath}", "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -2002,7 +2098,7 @@ namespace AccesosLauncher
             }
         }
 
-        private System.Drawing.Bitmap RedimensionarImagen(System.Drawing.Image imagen, int ancho, int alto)
+        private static System.Drawing.Bitmap RedimensionarImagen(System.Drawing.Image imagen, int ancho, int alto)
         {
             var bitmap = new System.Drawing.Bitmap(ancho, alto);
             using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
@@ -2013,7 +2109,7 @@ namespace AccesosLauncher
             return bitmap;
         }
 
-        private string LimpiarNombreArchivo(string nombre)
+        private static string LimpiarNombreArchivo(string nombre)
         {
             string patron = @"[<>:""/\|?*]";
             return System.Text.RegularExpressions.Regex.Replace(nombre, patron, "_");
@@ -2067,7 +2163,7 @@ namespace AccesosLauncher
                             var urlLine = File.ReadLines(item.FullPath).FirstOrDefault(l => l.StartsWith("URL=", StringComparison.OrdinalIgnoreCase));
                             if (urlLine != null)
                             {
-                                pathToOpen = urlLine.Substring(4);
+                                pathToOpen = urlLine[4..];
                             }
                         }
                         catch
@@ -2091,6 +2187,894 @@ namespace AccesosLauncher
             }
         }
 
+        #region Proyectos Tab
+
+        #region Drag and Drop for WrapPanelAccesos
+
+        private System.Windows.Point _wrapPanelStartPoint;
+        private Models.ProyectoAcceso? _draggedAcceso;
+
+        private void WrapPanelAccesos_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            _wrapPanelStartPoint = e.GetPosition(null);
+        }
+
+        private void WrapPanelAccesos_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+            if (_draggedAcceso != null) return;
+
+            var pos = e.GetPosition(null);
+            var diff = _wrapPanelStartPoint - pos;
+
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            {
+                var wrapPanel = sender as WrapPanel;
+                var button = FindAncestor<System.Windows.Controls.Button>((DependencyObject)e.OriginalSource);
+                if (button != null && button.Tag is Models.ProyectoAcceso acceso)
+                {
+                    _draggedAcceso = acceso;
+                    var data = new System.Windows.DataObject("ProyectoAcceso", acceso);
+                    System.Windows.DragDrop.DoDragDrop(button, data, System.Windows.DragDropEffects.Move);
+                    _draggedAcceso = null;
+                    e.Handled = true;
+                }
+            }
+        }
+
+        private void WrapPanelAccesos_DragEnter(object sender, System.Windows.DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent("ProyectoAcceso"))
+            {
+                e.Effects = System.Windows.DragDropEffects.Move;
+            }
+            else
+            {
+                e.Effects = System.Windows.DragDropEffects.None;
+            }
+            e.Handled = true;
+        }
+
+        private void WrapPanelAccesos_DragOver(object sender, System.Windows.DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent("ProyectoAcceso"))
+            {
+                e.Effects = System.Windows.DragDropEffects.Move;
+            }
+            else
+            {
+                e.Effects = System.Windows.DragDropEffects.None;
+            }
+            e.Handled = true;
+        }
+
+        private void WrapPanelAccesos_Drop(object sender, System.Windows.DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent("ProyectoAcceso")) return;
+            if (e.Data.GetData("ProyectoAcceso") is not Models.ProyectoAcceso draggedAcceso) return;
+            if (SelectedProyecto == null) return;
+
+            if (sender is not WrapPanel wrapPanel) return;
+
+            var targetElement = FindAncestor<System.Windows.Controls.Button>((DependencyObject)e.OriginalSource);
+            
+            int newIndex;
+            if (targetElement != null && targetElement.Tag is Models.ProyectoAcceso targetAcceso)
+            {
+                newIndex = targetAcceso.Orden;
+            }
+            else
+            {
+                newIndex = ProyectoAccesos.Count - 1;
+            }
+
+            if (draggedAcceso.Orden == newIndex) return;
+
+            ReorderProyectoAccesos(draggedAcceso, newIndex);
+        }
+
+        private void ReorderProyectoAccesos(Models.ProyectoAcceso draggedAcceso, int newIndex)
+        {
+            if (SelectedProyecto == null) return;
+
+            try
+            {
+                var oldIndex = draggedAcceso.Orden;
+                var updates = new List<(int Id, int NewOrden)>();
+
+                foreach (var acceso in ProyectoAccesos)
+                {
+                    int newOrden;
+                    if (oldIndex < newIndex)
+                    {
+                        if (acceso.Orden > oldIndex && acceso.Orden <= newIndex)
+                            newOrden = acceso.Orden - 1;
+                        else if (acceso.Id == draggedAcceso.Id)
+                            newOrden = newIndex;
+                        else
+                            continue;
+                    }
+                    else
+                    {
+                        if (acceso.Orden >= newIndex && acceso.Orden < oldIndex)
+                            newOrden = acceso.Orden + 1;
+                        else if (acceso.Id == draggedAcceso.Id)
+                            newOrden = newIndex;
+                        else
+                            continue;
+                    }
+                    updates.Add((acceso.Id, newOrden));
+                }
+
+                if (updates.Count > 0)
+                {
+                    _databaseHelper.UpdateProyectoAccesoOrden(updates);
+                    ShowToast("Orden actualizado");
+                    LoadProyectoAccesos();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al reordenar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void GridSplitterProyectos_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        {
+            CaptureProyectosSplitProportion();
+        }
+
+        #endregion
+
+        private void LoadProyectos()
+        {
+            try
+            {
+                var filterActive = chkSoloActivos?.IsChecked ?? true;
+                var searchTerms = txtBuscarProyecto?.Text;
+                var proyectos = _databaseHelper.GetProyectos(filterActive, searchTerms);
+                Proyectos.Clear();
+                foreach (var p in proyectos)
+                {
+                    Proyectos.Add(p);
+                }
+                UpdateEmptyStateProyectos();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cargar proyectos:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void DebounceSearchProyectos()
+        {
+            _searchDebounceTimer?.Stop();
+            _searchDebounceTimer?.Dispose();
+            _searchDebounceTimer = new Timer(150) { AutoReset = false };
+            _searchDebounceTimer.Elapsed += (_, __) => Dispatcher.Invoke(LoadProyectos);
+            _searchDebounceTimer.Start();
+        }
+
+        private void UpdateEmptyStateProyectos()
+        {
+            if (emptyStateProyectos == null || dgProyectos == null) return;
+            if (Proyectos.Count == 0)
+            {
+                emptyStateProyectos.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                emptyStateProyectos.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void OnSelectedProyectoChanged()
+        {
+            btnEditarProyecto.IsEnabled = SelectedProyecto != null;
+            btnEliminarProyecto.IsEnabled = SelectedProyecto != null;
+            btnActivarDesactivar.IsEnabled = SelectedProyecto != null;
+            btnEditarDescripcion.IsEnabled = SelectedProyecto != null;
+            btnAgregarAcceso.IsEnabled = SelectedProyecto != null;
+
+            if (SelectedProyecto != null)
+            {
+                LoadProyectoDescripcion();
+                LoadProyectoAccesos();
+                UpdateProyectoLastAccess();
+                UpdateActivarDesactivarButton();
+            }
+            else
+            {
+                rtxtDescripcion.Document.Blocks.Clear();
+                rtxtDescripcion.Document.Blocks.Add(new Paragraph(new Run("Seleccione un proyecto para ver su descripcion")));
+                wrapPanelAccesos.Children.Clear();
+            }
+        }
+
+        private void LoadProyectoDescripcion()
+        {
+            if (SelectedProyecto == null) return;
+            rtxtDescripcion.Document.Blocks.Clear();
+            if (!string.IsNullOrEmpty(SelectedProyecto.DescripcionLarga))
+            {
+                var flowDoc = new FlowDocument();
+                var paragraph = new Paragraph(new Run(SelectedProyecto.DescripcionLarga));
+                flowDoc.Blocks.Add(paragraph);
+                rtxtDescripcion.Document = flowDoc;
+            }
+            else
+            {
+                rtxtDescripcion.Document.Blocks.Add(new Paragraph(new Run("(Sin descripcion)")));
+            }
+            _originalDescripcionText = SelectedProyecto.DescripcionLarga ?? string.Empty;
+            SetDescripcionEditingMode(false);
+        }
+
+        private void LoadProyectoAccesos()
+        {
+            if (SelectedProyecto == null) return;
+            try
+            {
+                var accesos = _databaseHelper.GetProyectoAccesos(SelectedProyecto.Id);
+                ProyectoAccesos.Clear();
+                foreach (var acceso in accesos)
+                {
+                    acceso.Icon = IconHelper.GetIconImageSource(acceso.AccesoFullPath);
+                    ProyectoAccesos.Add(acceso);
+                }
+                RenderProyectoAccesos();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cargar accesos:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void RenderProyectoAccesos()
+        {
+            wrapPanelAccesos.Children.Clear();
+            
+            if (ProyectoAccesos.Count == 0)
+            {
+                emptyStateAccesos.Visibility = Visibility.Visible;
+                wrapPanelAccesos.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            emptyStateAccesos.Visibility = Visibility.Collapsed;
+            wrapPanelAccesos.Visibility = Visibility.Visible;
+
+            foreach (var acceso in ProyectoAccesos)
+            {
+                var button = new System.Windows.Controls.Button
+                {
+                    Tag = acceso,
+                    Margin = new Thickness(6),
+                    Padding = new Thickness(8),
+                    Width = 160,
+                    Height = 120,
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    BorderBrush = System.Windows.Media.Brushes.Transparent,
+                    ToolTip = acceso.PathExiste ? acceso.AccesoFullPath : $"Archivo no encontrado: {acceso.AccesoFullPath}"
+                };
+
+                var stack = new System.Windows.Controls.StackPanel
+                {
+                    Orientation = System.Windows.Controls.Orientation.Vertical,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center
+                };
+
+                var image = new System.Windows.Controls.Image
+                {
+                    Source = acceso.Icon,
+                    Width = 48,
+                    Height = 48,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+                };
+                stack.Children.Add(image);
+
+                var text = new System.Windows.Controls.TextBlock
+                {
+                    Text = acceso.AccesoNombre,
+                    TextAlignment = System.Windows.TextAlignment.Center,
+                    TextTrimming = System.Windows.TextTrimming.CharacterEllipsis,
+                    MaxWidth = 140,
+                    TextWrapping = System.Windows.TextWrapping.Wrap,
+                    Margin = new Thickness(4, 6, 4, 0),
+                    Foreground = System.Windows.Media.Brushes.White
+                };
+                stack.Children.Add(text);
+
+                if (!acceso.PathExiste)
+                {
+                    var warning = new System.Windows.Controls.TextBlock
+                    {
+                        Text = "⚠️",
+                        FontSize = 14,
+                        HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 2, 0, 0)
+                    };
+                    stack.Children.Add(warning);
+                }
+
+                button.Content = stack;
+                button.Click += ProyectoAcceso_Click;
+
+                var contextMenu = new System.Windows.Controls.ContextMenu();
+                var renameItem = new System.Windows.Controls.MenuItem { Header = "Renombrar" };
+                renameItem.Click += (_, _) => RenameProyectoAcceso(acceso);
+                var deleteItem = new System.Windows.Controls.MenuItem { Header = "Eliminar" };
+                deleteItem.Click += (_, _) => DeleteProyectoAcceso(acceso);
+                var openLocationItem = new System.Windows.Controls.MenuItem
+                {
+                    Header = "Abrir ubicación del archivo",
+                    IsEnabled = acceso.PathExiste
+                };
+                openLocationItem.Click += (_, _) =>
+                {
+                    if (acceso.AccesoTipo == "Url" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.Url.ToString())
+                    {
+                        MessageBox.Show("No se puede abrir la ubicación de una URL.", "Información", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                    try
+                    {
+                        var directory = Path.GetDirectoryName(acceso.AccesoFullPath);
+                        if (!string.IsNullOrEmpty(directory))
+                        {
+                            Process.Start("explorer.exe", $"/select,\"{acceso.AccesoFullPath}\"");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"No se pudo abrir la ubicación:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                };
+                contextMenu.Items.Add(renameItem);
+                contextMenu.Items.Add(deleteItem);
+                contextMenu.Items.Add(openLocationItem);
+                button.ContextMenu = contextMenu;
+
+                wrapPanelAccesos.Children.Add(button);
+            }
+        }
+
+        private void ProyectoAcceso_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button button && button.Tag is Models.ProyectoAcceso acceso)
+            {
+                if (!acceso.PathExiste)
+                {
+                    var result = MessageBox.Show(
+                        $"El archivo '{acceso.AccesoNombre}' no se encontró en '{acceso.AccesoFullPath}'. ¿Deseas eliminarlo del proyecto?",
+                        "Archivo no encontrado",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        DeleteProyectoAcceso(acceso);
+                    }
+                    return;
+                }
+
+                try
+                {
+                    if (acceso.AccesoTipo == "Url" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.Url.ToString())
+                    {
+                        Process.Start(new ProcessStartInfo(acceso.AccesoFullPath) { UseShellExecute = true });
+                    }
+                    else
+                    {
+                        var psi = new ProcessStartInfo(acceso.AccesoFullPath)
+                        {
+                            UseShellExecute = true,
+                            WorkingDirectory = Path.GetDirectoryName(acceso.AccesoFullPath) ?? BaseDir
+                        };
+                        Process.Start(psi);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"No se pudo abrir:\n{acceso.AccesoFullPath}\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void RenameProyectoAcceso(Models.ProyectoAcceso acceso)
+        {
+            string newName = Interaction.InputBox("Ingrese el nuevo nombre:", "Renombrar acceso", acceso.AccesoNombre);
+            if (!string.IsNullOrWhiteSpace(newName) && newName != acceso.AccesoNombre)
+            {
+                try
+                {
+                    _databaseHelper.RenameProyectoAcceso(acceso.Id, newName);
+                    ShowToast("Acceso renombrado");
+                    LoadProyectoAccesos();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al renombrar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void DeleteProyectoAcceso(Models.ProyectoAcceso acceso)
+        {
+            var result = MessageBox.Show($"¿Está seguro de que desea eliminar el acceso '{acceso.AccesoNombre}'?", 
+                "Confirmar eliminacion", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    _databaseHelper.DeleteProyectoAcceso(acceso.Id);
+                    ShowToast("Acceso eliminado");
+                    LoadProyectoAccesos();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al eliminar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void UpdateProyectoLastAccess()
+        {
+            if (SelectedProyecto == null) return;
+            try
+            {
+                _databaseHelper.UpdateProyectoLastAccess(SelectedProyecto.Id);
+                SelectedProyecto.FechaUltimoAcceso = DateTime.Now;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error updating last access: {ex.Message}");
+            }
+        }
+
+        private void UpdateActivarDesactivarButton()
+        {
+            if (SelectedProyecto == null || btnActivarDesactivar == null) return;
+            btnActivarDesactivar.Content = SelectedProyecto.Activo == "S" ? "Desactivar" : "Activar";
+        }
+
+        private void SetDescripcionEditingMode(bool editing)
+        {
+            _isEditingDescripcion = editing;
+            rtxtDescripcion.IsReadOnly = !editing;
+            btnEditarDescripcion.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
+            btnGuardarDescripcion.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+            btnCancelarDescripcion.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+            if (!editing)
+            {
+                _originalDescripcionText = SelectedProyecto?.DescripcionLarga ?? string.Empty;
+            }
+        }
+
+        private void ShowToast(string message)
+        {
+            if (toastPanel == null || toastMessage == null) return;
+            toastMessage.Text = message;
+            toastPanel.Visibility = Visibility.Visible;
+            var timer = new Timer(3000) { AutoReset = false };
+            timer.Elapsed += (_, __) => Dispatcher.Invoke(() => toastPanel.Visibility = Visibility.Collapsed);
+            timer.Start();
+        }
+
+        #endregion
+
+        #region Proyectos Event Handlers
+
+        private void BtnCrearProyecto_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Window
+            {
+                Title = "Crear Proyecto",
+                Width = 400,
+                Height = 300,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = System.Windows.Media.Brushes.DarkGray
+            };
+
+            var grid = new Grid { Margin = new Thickness(20) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lblNombre = new System.Windows.Controls.Label { Content = "Nombre:", Foreground = System.Windows.Media.Brushes.White };
+            System.Windows.Controls.Grid.SetRow(lblNombre, 0);
+            grid.Children.Add(lblNombre);
+
+            var txtNombre = new System.Windows.Controls.TextBox { Margin = new Thickness(0, 0, 0, 10) };
+            System.Windows.Controls.Grid.SetRow(txtNombre, 1);
+            grid.Children.Add(txtNombre);
+
+            var lblDescCorta = new System.Windows.Controls.Label { Content = "Descripcion corta:", Foreground = System.Windows.Media.Brushes.White };
+            System.Windows.Controls.Grid.SetRow(lblDescCorta, 2);
+            grid.Children.Add(lblDescCorta);
+
+            var txtDescCorta = new System.Windows.Controls.TextBox { Margin = new Thickness(0, 0, 0, 10) };
+            System.Windows.Controls.Grid.SetRow(txtDescCorta, 3);
+            grid.Children.Add(txtDescCorta);
+
+            var panelBotones = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
+            System.Windows.Controls.Grid.SetRow(panelBotones, 5);
+
+            var btnAceptar = new System.Windows.Controls.Button { Content = "Crear", Padding = new Thickness(15, 5, 15, 5), Margin = new Thickness(0, 0, 10, 0) };
+            var btnCancelar = new System.Windows.Controls.Button { Content = "Cancelar", Padding = new Thickness(15, 5, 15, 5) };
+
+            btnAceptar.Click += (_, __) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtNombre.Text))
+                {
+                    MessageBox.Show("El nombre es obligatorio.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var proyectos = _databaseHelper.GetProyectos(false, null);
+                if (proyectos.Any(p => p.Nombre.Equals(txtNombre.Text, StringComparison.OrdinalIgnoreCase)))
+                {
+                    MessageBox.Show("El nombre ya existe.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                try
+                {
+                    _databaseHelper.CreateProyecto(txtNombre.Text, txtDescCorta.Text, null);
+                    ShowToast("Proyecto creado");
+                    LoadProyectos();
+                    dialog.Close();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al crear proyecto:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
+            btnCancelar.Click += (_, __) => dialog.Close();
+            panelBotones.Children.Add(btnAceptar);
+            panelBotones.Children.Add(btnCancelar);
+            grid.Children.Add(panelBotones);
+
+            dialog.Content = grid;
+            dialog.ShowDialog();
+        }
+
+        private void BtnEditarProyecto_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null) return;
+
+            var dialog = new Window
+            {
+                Title = "Editar Proyecto",
+                Width = 400,
+                Height = 300,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = System.Windows.Media.Brushes.DarkGray
+            };
+
+            var grid = new Grid { Margin = new Thickness(20) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lblNombre = new System.Windows.Controls.Label { Content = "Nombre:", Foreground = System.Windows.Media.Brushes.White };
+            System.Windows.Controls.Grid.SetRow(lblNombre, 0);
+            grid.Children.Add(lblNombre);
+
+            var txtNombre = new System.Windows.Controls.TextBox { Text = SelectedProyecto.Nombre, Margin = new Thickness(0, 0, 0, 10) };
+            System.Windows.Controls.Grid.SetRow(txtNombre, 1);
+            grid.Children.Add(txtNombre);
+
+            var lblDescCorta = new System.Windows.Controls.Label { Content = "Descripcion corta:", Foreground = System.Windows.Media.Brushes.White };
+            System.Windows.Controls.Grid.SetRow(lblDescCorta, 2);
+            grid.Children.Add(lblDescCorta);
+
+            var txtDescCorta = new System.Windows.Controls.TextBox { Text = SelectedProyecto.DescripcionCorta, Margin = new Thickness(0, 0, 0, 10) };
+            System.Windows.Controls.Grid.SetRow(txtDescCorta, 3);
+            grid.Children.Add(txtDescCorta);
+
+            var panelBotones = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
+            System.Windows.Controls.Grid.SetRow(panelBotones, 5);
+
+            var btnAceptar = new System.Windows.Controls.Button { Content = "Guardar", Padding = new Thickness(15, 5, 15, 5), Margin = new Thickness(0, 0, 10, 0) };
+            var btnCancelar = new System.Windows.Controls.Button { Content = "Cancelar", Padding = new Thickness(15, 5, 15, 5) };
+
+            btnAceptar.Click += (_, __) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtNombre.Text))
+                {
+                    MessageBox.Show("El nombre es obligatorio.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var proyectos = _databaseHelper.GetProyectos(false, null);
+                if (proyectos.Any(p => p.Id != SelectedProyecto.Id && p.Nombre.Equals(txtNombre.Text, StringComparison.OrdinalIgnoreCase)))
+                {
+                    MessageBox.Show("El nombre ya existe.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                try
+                {
+                    _databaseHelper.UpdateProyecto(SelectedProyecto.Id, txtNombre.Text, txtDescCorta.Text, SelectedProyecto.DescripcionLarga);
+                    ShowToast("Proyecto actualizado");
+                    LoadProyectos();
+                    dialog.Close();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al actualizar proyecto:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
+            btnCancelar.Click += (_, __) => dialog.Close();
+            panelBotones.Children.Add(btnAceptar);
+            panelBotones.Children.Add(btnCancelar);
+            grid.Children.Add(panelBotones);
+
+            dialog.Content = grid;
+            dialog.ShowDialog();
+        }
+
+        private void BtnEliminarProyecto_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null) return;
+
+            var result = MessageBox.Show($"¿Está seguro de que desea eliminar el proyecto '{SelectedProyecto.Nombre}'?", 
+                "Confirmar eliminacion", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    _databaseHelper.DeleteProyecto(SelectedProyecto.Id);
+                    ShowToast("Proyecto eliminado");
+                    SelectedProyecto = null;
+                    LoadProyectos();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al eliminar proyecto:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void BtnActivarDesactivar_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null) return;
+
+            try
+            {
+                if (SelectedProyecto.Activo == "S")
+                {
+                    _databaseHelper.DeactivateProyecto(SelectedProyecto.Id);
+                    SelectedProyecto.Activo = "N";
+                    ShowToast("Proyecto desactivado");
+                }
+                else
+                {
+                    _databaseHelper.ActivateProyecto(SelectedProyecto.Id);
+                    SelectedProyecto.Activo = "S";
+                    ShowToast("Proyecto activado");
+                }
+                UpdateActivarDesactivarButton();
+                LoadProyectos();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cambiar estado:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ChkSoloActivos_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_proyectosLoaded)
+            {
+                LoadProyectos();
+            }
+        }
+
+        private void DgProyectos_Sorting(object sender, DataGridSortingEventArgs e)
+        {
+        }
+
+        private void BtnEditarDescripcion_Click(object sender, RoutedEventArgs e)
+        {
+            SetDescripcionEditingMode(true);
+        }
+
+        private void BtnGuardarDescripcion_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null) return;
+
+            try
+            {
+                var textRange = new TextRange(rtxtDescripcion.Document.ContentStart, rtxtDescripcion.Document.ContentEnd);
+                var newText = textRange.Text.TrimEnd();
+
+                _databaseHelper.UpdateProyecto(SelectedProyecto.Id, SelectedProyecto.Nombre, SelectedProyecto.DescripcionCorta, newText);
+                SelectedProyecto.DescripcionLarga = newText;
+                ShowToast("Descripcion guardada");
+                SetDescripcionEditingMode(false);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al guardar descripcion:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnCancelarDescripcion_Click(object sender, RoutedEventArgs e)
+        {
+            LoadProyectoDescripcion();
+            SetDescripcionEditingMode(false);
+        }
+
+        private void BtnAgregarAcceso_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null) return;
+
+            var dialog = new Window
+            {
+                Title = "Agregar Acceso",
+                Width = 500,
+                Height = 280,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = System.Windows.Media.Brushes.DarkGray
+            };
+
+            var grid = new Grid { Margin = new Thickness(20) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lblTipo = new System.Windows.Controls.Label { Content = "Tipo:", Foreground = System.Windows.Media.Brushes.White };
+            System.Windows.Controls.Grid.SetRow(lblTipo, 0);
+            grid.Children.Add(lblTipo);
+
+            var cmbTipo = new System.Windows.Controls.ComboBox { Margin = new Thickness(0, 0, 0, 10) };
+            cmbTipo.Items.Add("Archivo");
+            cmbTipo.Items.Add("Carpeta");
+            cmbTipo.Items.Add("URL");
+            cmbTipo.SelectedIndex = 0;
+            System.Windows.Controls.Grid.SetRow(cmbTipo, 1);
+            grid.Children.Add(cmbTipo);
+
+            var lblPath = new System.Windows.Controls.Label { Content = "Ruta:", Foreground = System.Windows.Media.Brushes.White };
+            System.Windows.Controls.Grid.SetRow(lblPath, 2);
+            grid.Children.Add(lblPath);
+
+            var panelPath = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+            System.Windows.Controls.Grid.SetRow(panelPath, 3);
+
+            var txtPath = new System.Windows.Controls.TextBox { Width = 300 };
+            panelPath.Children.Add(txtPath);
+
+            var btnExplorar = new System.Windows.Controls.Button { Content = "...", Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(5, 0, 0, 0) };
+            btnExplorar.Click += (_, __) =>
+            {
+                if (cmbTipo.SelectedIndex == 2)
+                {
+                    var url = Interaction.InputBox("Ingrese la URL:", "Agregar URL", "https://");
+                    txtPath.Text = url;
+                }
+                else if (cmbTipo.SelectedIndex == 1)
+                {
+                    using var folderDialog = new System.Windows.Forms.FolderBrowserDialog();
+                    if (folderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        txtPath.Text = folderDialog.SelectedPath;
+                    }
+                }
+                else
+                {
+                    var dialogo = new Microsoft.Win32.OpenFileDialog
+                    {
+                        Filter = "Archivos ejecutables|*.exe;*.bat;*.cmd;*.ps1|Accesos directos|*.lnk;*.url|Todos los archivos|*.*",
+                        CheckFileExists = true,
+                        Multiselect = true
+                    };
+                    if (dialogo.ShowDialog() == true)
+                    {
+                        txtPath.Text = string.Join("|", dialogo.FileNames);
+                    }
+                }
+            };
+            panelPath.Children.Add(btnExplorar);
+            grid.Children.Add(panelPath);
+
+            var panelBotones = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
+            System.Windows.Controls.Grid.SetRow(panelBotones, 4);
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var btnAceptar = new System.Windows.Controls.Button { Content = "Agregar", Padding = new Thickness(15, 5, 15, 5), Margin = new Thickness(0, 0, 10, 0) };
+            var btnCancelar = new System.Windows.Controls.Button { Content = "Cancelar", Padding = new Thickness(15, 5, 15, 5) };
+
+            btnAceptar.Click += (_, __) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtPath.Text))
+                {
+                    MessageBox.Show("La ruta es obligatoria.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                string accesoTipo = cmbTipo.SelectedIndex switch { 0 => "File", 1 => "Folder", 2 => "Url", _ => "File" };
+
+                if (accesoTipo == "Url")
+                {
+                    if (!Uri.TryCreate(txtPath.Text, UriKind.Absolute, out var uri) ||
+                        (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFtp))
+                    {
+                        MessageBox.Show("URL inválida. Debe comenzar con http://, https:// o ftp://.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+
+                var paths = txtPath.Text.Split('|');
+                var existingAccesos = _databaseHelper.GetProyectoAccesos(SelectedProyecto.Id);
+                int addedCount = 0;
+                int existingCount = 0;
+
+                foreach (var path in paths)
+                {
+                    if (string.IsNullOrWhiteSpace(path)) continue;
+
+                    if (existingAccesos.Any(a => a.AccesoFullPath == path))
+                    {
+                        existingCount++;
+                        continue;
+                    }
+
+                    string accesoNombre = Path.GetFileNameWithoutExtension(path);
+                    if (string.IsNullOrWhiteSpace(accesoNombre))
+                    {
+                        accesoNombre = path;
+                    }
+
+                    try
+                    {
+                        _databaseHelper.AddProyectoAcceso(SelectedProyecto.Id, path, accesoNombre, accesoTipo);
+                        addedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error al agregar acceso '{path}':\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+
+                if (addedCount > 0 || existingCount > 0)
+                {
+                    var message = addedCount > 0 ? $"Acceso(s) agregado(s): {addedCount}" : "";
+                    if (existingCount > 0)
+                    {
+                        message += existingCount > 0 && addedCount > 0 ? $" ({existingCount} ya existían)" : (addedCount == 0 ? $"({existingCount} ya existían)" : "");
+                    }
+                    ShowToast(message.Trim());
+                    LoadProyectoAccesos();
+                    dialog.Close();
+                }
+            };
+
+            btnCancelar.Click += (_, __) => dialog.Close();
+            panelBotones.Children.Add(btnAceptar);
+            panelBotones.Children.Add(btnCancelar);
+            grid.Children.Add(panelBotones);
+
+            dialog.Content = grid;
+            dialog.ShowDialog();
+        }
+
+        #endregion
 
     }
 

@@ -157,6 +157,100 @@
                         </ListView>
                     </DockPanel>
                 </TabItem>
+                <TabItem Header="Proyectos">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10,10,10,5">
+                            <Button x:Name="btnCrearProyecto" Content="Nuevo Proyecto" Click="BtnCrearProyecto_Click" Margin="0,0,5,0" Padding="10,5"/>
+                            <Button x:Name="btnEditarProyecto" Content="Editar" Click="BtnEditarProyecto_Click" Margin="5,0,5,0" Padding="10,5" IsEnabled="False"/>
+                            <Button x:Name="btnEliminarProyecto" Content="Eliminar" Click="BtnEliminarProyecto_Click" Margin="5,0,5,0" Padding="10,5" IsEnabled="False"/>
+                            <Button x:Name="btnActivarDesactivar" Content="Desactivar" Click="BtnActivarDesactivar_Click" Margin="5,0,5,0" Padding="10,5" IsEnabled="False"/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,5">
+                            <CheckBox x:Name="chkSoloActivos" Content="Solo activos" IsChecked="True" 
+                                      Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0"
+                                      Checked="ChkSoloActivos_Changed" Unchecked="ChkSoloActivos_Changed"/>
+                            <TextBox x:Name="txtBuscarProyecto" Width="380" 
+                                     Text="{Binding BuscarProyectoText, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <DataGrid Grid.Row="2" x:Name="dgProyectos" 
+                                  ItemsSource="{Binding Proyectos}"
+                                  SelectedItem="{Binding SelectedProyecto}"
+                                  AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow"
+                                  Background="#30FFFFFF" Foreground="Black" BorderBrush="Gray"
+                                  Margin="10,5" Sorting="DgProyectos_Sorting">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Nombre" Binding="{Binding Nombre}" Width="*"/>
+                                <DataGridTextColumn Header="Activo" Binding="{Binding ActivoIcono}" Width="60"/>
+                                <DataGridTextColumn Header="Descripcion" Binding="{Binding DescripcionCortaTruncada}" Width="2*"/>
+                                <DataGridTextColumn Header="Ultimo Acceso" Binding="{Binding FechaUltimoAcceso, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}" Width="140"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <GridSplitter Grid.Row="3" Height="5" HorizontalAlignment="Stretch" Background="Gray" DragCompleted="GridSplitterProyectos_DragCompleted"/>
+                        <Grid Grid.Row="4" Margin="10,5,10,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="6*" MinWidth="200"/>
+                                <ColumnDefinition Width="5*" MinWidth="200"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,5,0">
+                                <DockPanel>
+                                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
+                                        <TextBlock Text="Descripcion" Foreground="White" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        <Button x:Name="btnEditarDescripcion" Content="✏️" Click="BtnEditarDescripcion_Click" 
+                                                Margin="10,0,0,0" Padding="5,2" IsEnabled="False" ToolTip="Editar descripcion"/>
+                                        <Button x:Name="btnGuardarDescripcion" Content="✓" Click="BtnGuardarDescripcion_Click" 
+                                                Margin="5,0,0,0" Padding="5,2" Visibility="Collapsed" ToolTip="Guardar"/>
+                                        <Button x:Name="btnCancelarDescripcion" Content="✕" Click="BtnCancelarDescripcion_Click" 
+                                                Margin="5,0,0,0" Padding="5,2" Visibility="Collapsed" ToolTip="Cancelar"/>
+                                    </StackPanel>
+                                    <RichTextBox x:Name="rtxtDescripcion" IsReadOnly="True" 
+                                                 Background="#20FFFFFF" Foreground="White" BorderThickness="0"
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                                 Margin="5"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
+                                <DockPanel>
+                                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
+                                        <TextBlock Text="Accesos" Foreground="White" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        <Button x:Name="btnAgregarAcceso" Content="+" Click="BtnAgregarAcceso_Click" 
+                                                Margin="10,0,0,0" Padding="5,2" IsEnabled="False" ToolTip="Agregar acceso"/>
+                                    </StackPanel>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <WrapPanel x:Name="wrapPanelAccesos" AllowDrop="True" Drop="WrapPanelAccesos_Drop" DragEnter="WrapPanelAccesos_DragEnter" DragOver="WrapPanelAccesos_DragOver" PreviewMouseLeftButtonDown="WrapPanelAccesos_PreviewMouseLeftButtonDown" PreviewMouseMove="WrapPanelAccesos_PreviewMouseMove">
+                                        </WrapPanel>
+                                    </ScrollViewer>
+                                    <TextBlock x:Name="emptyStateAccesos" Text="Este proyecto no tiene accesos. Usá el botón + para agregar." 
+                                               Foreground="LightGray" FontStyle="Italic" HorizontalAlignment="Center" 
+                                               VerticalAlignment="Center" Margin="10" Visibility="Collapsed"/>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                        <Border x:Name="emptyStateProyectos" Grid.Row="2" Grid.RowSpan="3" 
+                                Background="#EE000000" Visibility="Collapsed">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <TextBlock Text="No tenes proyectos aun" Foreground="White" FontSize="18" 
+                                           HorizontalAlignment="Center" Margin="0,0,0,15"/>
+                                <Button Content="Crear tu primer proyecto" Click="BtnCrearProyecto_Click" 
+                                        Padding="15,8" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="toastPanel" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Margin="10" Padding="15,10" Background="#FF333333" CornerRadius="5"
+                                Visibility="Collapsed">
+                            <TextBlock x:Name="toastMessage" Foreground="White"/>
+                        </Border>
+                    </Grid>
+                </TabItem>
                 <TabItem Header="Más Usados">
                     <DockPanel>
                         <Button Content="Limpiar" DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="10" Padding="10,5" Click="ClearDatabase_Click"/>
