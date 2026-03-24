@@ -37,7 +37,7 @@ public static class WindowsTerminalLauncher
             FileName = "wt.exe",
             Arguments = wtArgs,
             UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Normal
+            WindowStyle = ProcessWindowStyle.Maximized
         };
 
         Process.Start(psi);
