@@ -2568,6 +2568,21 @@ namespace AccesosLauncher
                     {
                         Process.Start(new ProcessStartInfo(acceso.AccesoFullPath) { UseShellExecute = true });
                     }
+                    else if (acceso.AccesoTipo == "CarpetaDeTrabajo" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.CarpetaDeTrabajo.ToString())
+                    {
+                        try
+                        {
+                            Core.WindowsTerminalLauncher.OpenInWindowsTerminal(acceso.AccesoFullPath);
+                        }
+                        catch (DirectoryNotFoundException ex)
+                        {
+                            MessageBox.Show(ex.Message, "Directorio no encontrado", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show(ex.Message, "Error al abrir terminal", MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    }
                     else
                     {
                         var psi = new ProcessStartInfo(acceso.AccesoFullPath)
@@ -2948,6 +2963,7 @@ namespace AccesosLauncher
             var cmbTipo = new System.Windows.Controls.ComboBox { Margin = new Thickness(0, 0, 0, 10) };
             cmbTipo.Items.Add("Archivo");
             cmbTipo.Items.Add("Carpeta");
+            cmbTipo.Items.Add("Carpeta de Trabajo");
             cmbTipo.Items.Add("URL");
             cmbTipo.SelectedIndex = 0;
             System.Windows.Controls.Grid.SetRow(cmbTipo, 1);
@@ -2966,12 +2982,12 @@ namespace AccesosLauncher
             var btnExplorar = new System.Windows.Controls.Button { Content = "...", Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(5, 0, 0, 0) };
             btnExplorar.Click += (_, __) =>
             {
-                if (cmbTipo.SelectedIndex == 2)
+                if (cmbTipo.SelectedIndex == 3)
                 {
                     var url = Interaction.InputBox("Ingrese la URL:", "Agregar URL", "https://");
                     txtPath.Text = url;
                 }
-                else if (cmbTipo.SelectedIndex == 1)
+                else if (cmbTipo.SelectedIndex == 1 || cmbTipo.SelectedIndex == 2)
                 {
                     using var folderDialog = new System.Windows.Forms.FolderBrowserDialog();
                     if (folderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
@@ -3011,7 +3027,7 @@ namespace AccesosLauncher
                     return;
                 }
 
-                string accesoTipo = cmbTipo.SelectedIndex switch { 0 => "File", 1 => "Folder", 2 => "Url", _ => "File" };
+                string accesoTipo = cmbTipo.SelectedIndex switch { 0 => "File", 1 => "Folder", 2 => "CarpetaDeTrabajo", 3 => "Url", _ => "File" };
 
                 if (accesoTipo == "Url")
                 {

@@ -1,0 +1,20 @@
+[
+  {
+    "Orden": 1,
+    "Title": "lazygit",
+    "TabColor": "#1e6a4a",
+    "Parametro": "pwsh -NoExit -Command lazygit"
+  },
+  {
+    "Orden": 2,
+    "Title": "qwen",
+    "TabColor": "#4a3a8a",
+    "Parametro": "pwsh -NoExit -Command qwen"
+  },
+  {
+    "Orden": 3,
+    "Title": "shell",
+    "TabColor": "#8a4a1e",
+    "Parametro": ""
+  }
+]

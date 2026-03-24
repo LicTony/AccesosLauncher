@@ -4,6 +4,7 @@ namespace AccesosLauncher.Enums
     {
         File,
         Folder,
-        Url
+        Url,
+        CarpetaDeTrabajo
     }
 }

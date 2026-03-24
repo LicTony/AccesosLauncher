@@ -141,7 +141,7 @@ namespace AccesosLauncher
                             orden INTEGER NOT NULL DEFAULT 0,
                             acceso_full_path TEXT NOT NULL,
                             acceso_nombre TEXT NOT NULL,
-                            acceso_tipo TEXT NOT NULL CHECK(acceso_tipo IN ('File', 'Folder', 'Url')),
+                            acceso_tipo TEXT NOT NULL CHECK(acceso_tipo IN ('File', 'Folder', 'Url', 'CarpetaDeTrabajo')),
                             fecha_eliminacion DATETIME,
                             FOREIGN KEY (proyecto_id) REFERENCES Proyecto(id),
                             UNIQUE(proyecto_id, acceso_full_path)
@@ -149,6 +149,42 @@ namespace AccesosLauncher
 
                         CREATE INDEX IF NOT EXISTS idx_proyecto_activo ON Proyecto(activo);
                         CREATE INDEX IF NOT EXISTS idx_proyecto_fecha_eliminacion ON Proyecto(fecha_eliminacion);
+                        CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_proyecto_id ON ProyectoAcceso(proyecto_id);
+                        CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_fecha_eliminacion ON ProyectoAcceso(fecha_eliminacion);"
+                },
+                new Migration
+                {
+                    Version = 2,
+                    Descripcion = "Add CarpetaDeTrabajo to acceso_tipo CHECK constraint",
+                    Sql = @"
+                        -- Migration 2: Add 'CarpetaDeTrabajo' to acceso_tipo CHECK constraint
+                        -- SQLite doesn't support ALTER TABLE for CHECK constraints, so we recreate the table
+                        
+                        -- Create temporary table with new constraint
+                        CREATE TABLE IF NOT EXISTS ProyectoAcceso_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            proyecto_id INTEGER NOT NULL,
+                            orden INTEGER NOT NULL DEFAULT 0,
+                            acceso_full_path TEXT NOT NULL,
+                            acceso_nombre TEXT NOT NULL,
+                            acceso_tipo TEXT NOT NULL CHECK(acceso_tipo IN ('File', 'Folder', 'Url', 'CarpetaDeTrabajo')),
+                            fecha_eliminacion DATETIME,
+                            FOREIGN KEY (proyecto_id) REFERENCES Proyecto(id),
+                            UNIQUE(proyecto_id, acceso_full_path)
+                        );
+                        
+                        -- Copy data from old table to new table
+                        INSERT INTO ProyectoAcceso_new (id, proyecto_id, orden, acceso_full_path, acceso_nombre, acceso_tipo, fecha_eliminacion)
+                        SELECT id, proyecto_id, orden, acceso_full_path, acceso_nombre, acceso_tipo, fecha_eliminacion
+                        FROM ProyectoAcceso;
+                        
+                        -- Drop old table
+                        DROP TABLE ProyectoAcceso;
+                        
+                        -- Rename new table to original name
+                        ALTER TABLE ProyectoAcceso_new RENAME TO ProyectoAcceso;
+                        
+                        -- Recreate indexes
                         CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_proyecto_id ON ProyectoAcceso(proyecto_id);
                         CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_fecha_eliminacion ON ProyectoAcceso(fecha_eliminacion);"
                 }
