@@ -1,13 +1,21 @@
-﻿<Window x:Class="AccesosLauncher.MainWindow"
+<Window x:Class="AccesosLauncher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AccesosLauncher"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         Title="Accesos" Width="800" Height="600"
         Loaded="Window_Loaded"
         Closing="Window_Closing"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" AllowsTransparency="True"
-        Visibility="Hidden" ShowInTaskbar="False">
+        Visibility="Hidden" ShowInTaskbar="False"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        TextElement.FontWeight="Regular"
+        TextElement.FontSize="13"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{DynamicResource MaterialDesignFont}">
     <Window.Resources>
         <CollectionViewSource x:Key="GroupedItems" Source="{Binding Items}">
             <CollectionViewSource.GroupDescriptions>
@@ -22,32 +30,8 @@
 
     <Border x:Name="MainBorder" BorderBrush="#80FFFFFF">
         <DockPanel MouseLeftButtonDown="DockPanel_MouseLeftButtonDown">
-            <TabControl x:Name="MainTabControl" Background="Transparent" BorderBrush="Transparent" SelectionChanged="MainTabControl_SelectionChanged">
+            <TabControl x:Name="MainTabControl" SelectionChanged="MainTabControl_SelectionChanged" Margin="0,5,0,0">
                 <TabControl.Resources>
-                    <Style TargetType="TabItem">
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="TabItem">
-                                    <Border Name="Border" BorderThickness="1,1,1,0" BorderBrush="Gainsboro" CornerRadius="4,4,0,0" Margin="2,0">
-                                        <ContentPresenter x:Name="ContentSite"
-                                          VerticalAlignment="Center"
-                                          HorizontalAlignment="Center"
-                                          ContentSource="Header"
-                                          Margin="10,2"/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Border" Property="Background" Value="#50FFFFFF" />
-                                        </Trigger>
-                                        <Trigger Property="IsSelected" Value="False">
-                                            <Setter TargetName="Border" Property="Background" Value="Transparent" />
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                        <Setter Property="Foreground" Value="White"/>
-                    </Style>
                 </TabControl.Resources>
                 <TabItem Header="Accesos">
                     <DockPanel>
@@ -178,20 +162,30 @@
                                       Checked="ChkSoloActivos_Changed" Unchecked="ChkSoloActivos_Changed"/>
                             <TextBox x:Name="txtBuscarProyecto" Width="380" 
                                      Text="{Binding BuscarProyectoText, UpdateSourceTrigger=PropertyChanged}"
-                                     Background="#30FFFFFF" Foreground="White" BorderBrush="Gray"
-                                     VerticalAlignment="Center"/>
+                                     VerticalAlignment="Center" KeyDown="TxtBuscarProyecto_KeyDown"/>
                         </StackPanel>
                         <DataGrid Grid.Row="2" x:Name="dgProyectos" 
                                   ItemsSource="{Binding Proyectos}"
                                   SelectedItem="{Binding SelectedProyecto}"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                   IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow"
-                                  Background="#30FFFFFF" Foreground="Black" BorderBrush="Gray"
                                   Margin="10,5" Sorting="DgProyectos_Sorting">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Nombre" Binding="{Binding Nombre}" Width="*"/>
-                                <DataGridTextColumn Header="Activo" Binding="{Binding ActivoIcono}" Width="60"/>
-                                <DataGridTextColumn Header="Descripcion" Binding="{Binding DescripcionCortaTruncada}" Width="2*"/>
+                                <DataGridTextColumn Header="Activo" Binding="{Binding ActivoIcono}" Width="90"/>
+                                <DataGridTextColumn Header="Descripcion" Binding="{Binding DescripcionCortaTruncada}" Width="2*">
+                                    <DataGridTextColumn.CellStyle>
+                                        <Style TargetType="DataGridCell" BasedOn="{StaticResource MaterialDesignDataGridCell}">
+                                            <Setter Property="VerticalContentAlignment" Value="Top"/>
+                                        </Style>
+                                    </DataGridTextColumn.CellStyle>
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextWrapping" Value="Wrap"/>
+                                            <Setter Property="Margin" Value="16,16,16,16"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                                 <DataGridTextColumn Header="Ultimo Acceso" Binding="{Binding FechaUltimoAcceso, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}" Width="140"/>
                             </DataGrid.Columns>
                         </DataGrid>
@@ -213,7 +207,7 @@
                                                 Margin="5,0,0,0" Padding="5,2" Visibility="Collapsed" ToolTip="Cancelar"/>
                                     </StackPanel>
                                     <RichTextBox x:Name="rtxtDescripcion" IsReadOnly="True" 
-                                                 Background="#20FFFFFF" Foreground="White" BorderThickness="0"
+                                                 VerticalContentAlignment="Top" BorderThickness="0"
                                                  AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
                                                  Margin="5"/>
                                 </DockPanel>
@@ -254,31 +248,13 @@
                 <TabItem Header="Más Usados">
                     <DockPanel>
                         <Button Content="Limpiar" DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="10" Padding="10,5" Click="ClearDatabase_Click"/>
-                        <ListView ItemsSource="{Binding MostUsedItems}" Background="Transparent" BorderBrush="Transparent" Foreground="White">
-                            <ListView.Resources>
-                                <Style TargetType="ListViewItem">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="DarkBlue"/>
-                                        </Trigger>
-                                        <MultiTrigger>
-                                            <MultiTrigger.Conditions>
-                                                <Condition Property="IsMouseOver" Value="True"/>
-                                                <Condition Property="IsSelected" Value="False"/>
-                                            </MultiTrigger.Conditions>
-                                            <Setter Property="Background" Value="Blue"/>
-                                        </MultiTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ListView.Resources>
-                            <ListView.View>
-                                <GridView>
-                                    <GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="300"/>
-                                    <GridViewColumn Header="Último Uso" DisplayMemberBinding="{Binding LastAccessTime, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="200"/>
-                                    <GridViewColumn Header="Usos" DisplayMemberBinding="{Binding AccessCount}" Width="100"/>
-                                </GridView>
-                            </ListView.View>
-                        </ListView>
+                        <DataGrid ItemsSource="{Binding MostUsedItems}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="300"/>
+                                <DataGridTextColumn Header="Último Uso" Binding="{Binding LastAccessTime, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="200"/>
+                                <DataGridTextColumn Header="Usos" Binding="{Binding AccessCount}" Width="100"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </DockPanel>
                 </TabItem>
                 <TabItem Header="Configuracion">
@@ -287,7 +263,7 @@
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <DataGrid ItemsSource="{Binding AppSettings}" AutoGenerateColumns="False" CanUserAddRows="False" Grid.Row="0" Background="#30FFFFFF" Foreground="Black" BorderBrush="Gray">
+                        <DataGrid ItemsSource="{Binding AppSettings}" AutoGenerateColumns="False" CanUserAddRows="False" Grid.Row="0" KeyboardNavigation.TabNavigation="None">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Setting" Binding="{Binding Key}" IsReadOnly="True" Width="*"/>
                                 <DataGridTextColumn Header="Value" Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Width="2*"/>

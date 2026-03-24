@@ -2901,6 +2901,18 @@ namespace AccesosLauncher
             }
         }
 
+        private void TxtBuscarProyecto_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (Proyectos.Count == 1)
+                {
+                    SelectedProyecto = Proyectos[0];
+                    dgProyectos.Focus();
+                }
+            }
+        }
+
         private void DgProyectos_Sorting(object sender, DataGridSortingEventArgs e)
         {
         }
