@@ -94,33 +94,27 @@ namespace AccesosLauncher
                 whereClauses.Add("activo = 'S'");
             }
 
+            var command = connection.CreateCommand();
+
             if (!string.IsNullOrWhiteSpace(searchTerms))
             {
                 var terms = searchTerms.Split('%', StringSplitOptions.RemoveEmptyEntries);
-                foreach (var term in terms)
+                for (int i = 0; i < terms.Length; i++)
                 {
-                    whereClauses.Add("(nombre LIKE @term OR descripcion_corta LIKE @term)");
+                    string paramName = $"@term{i}";
+                    whereClauses.Add($"(nombre LIKE {paramName} OR descripcion_corta LIKE {paramName})");
+                    command.Parameters.AddWithValue(paramName, $"%{terms[i].Trim()}%");
                 }
             }
 
             var whereClause = string.Join(" AND ", whereClauses);
 
-            var command = connection.CreateCommand();
             command.CommandText = $@"
                 SELECT id, nombre, descripcion_corta, descripcion_larga, activo,
                        fecha_creacion, fecha_ultimo_acceso, fecha_eliminacion
                 FROM Proyecto
                 WHERE {whereClause}
                 ORDER BY fecha_ultimo_acceso DESC;";
-
-            if (!string.IsNullOrWhiteSpace(searchTerms))
-            {
-                var terms = searchTerms.Split('%', StringSplitOptions.RemoveEmptyEntries);
-                foreach (var term in terms)
-                {
-                    command.Parameters.AddWithValue("@term", $"%{term}%");
-                }
-            }
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
