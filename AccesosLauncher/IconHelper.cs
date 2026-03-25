@@ -150,6 +150,34 @@ namespace AccesosLauncher
             return GetDefaultIcon();
         }
 
+        [SupportedOSPlatform("windows")]
+        public static ImageSource GetIconFromFile(string icoFilePath)
+        {
+            if (string.IsNullOrEmpty(icoFilePath))
+                return GetDefaultIcon();
+
+            if (Cache.TryGetValue(icoFilePath, out var cachedIcon))
+                return cachedIcon;
+
+            try
+            {
+                if (!File.Exists(icoFilePath))
+                    return GetDefaultIcon();
+
+                using var ico = Icon.ExtractAssociatedIcon(icoFilePath);
+                if (ico == null)
+                    return GetDefaultIcon();
+
+                var source = ConvertIconToBitmapSource(ico);
+                Cache[icoFilePath] = source;
+                return source;
+            }
+            catch
+            {
+                return GetDefaultIcon();
+            }
+        }
+
         private static BitmapImage ConvertIconToBitmapSource(Icon icon)
         {
             using var bmp = icon.ToBitmap();

@@ -187,6 +187,43 @@ namespace AccesosLauncher
                         -- Recreate indexes
                         CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_proyecto_id ON ProyectoAcceso(proyecto_id);
                         CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_fecha_eliminacion ON ProyectoAcceso(fecha_eliminacion);"
+                },
+                new Migration
+                {
+                    Version = 3,
+                    Descripcion = "Update UNIQUE constraint to include acceso_tipo",
+                    Sql = @"
+                        -- Migration 3: Update UNIQUE constraint to include acceso_tipo
+                        -- This allows same path with different types (e.g., Folder + CarpetaDeTrabajo)
+                        -- SQLite doesn't support ALTER TABLE for constraints, so we recreate the table
+                        
+                        -- Create temporary table with new constraint (includes acceso_tipo)
+                        CREATE TABLE IF NOT EXISTS ProyectoAcceso_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            proyecto_id INTEGER NOT NULL,
+                            orden INTEGER NOT NULL DEFAULT 0,
+                            acceso_full_path TEXT NOT NULL,
+                            acceso_nombre TEXT NOT NULL,
+                            acceso_tipo TEXT NOT NULL CHECK(acceso_tipo IN ('File', 'Folder', 'Url', 'CarpetaDeTrabajo')),
+                            fecha_eliminacion DATETIME,
+                            FOREIGN KEY (proyecto_id) REFERENCES Proyecto(id),
+                            UNIQUE(proyecto_id, acceso_full_path, acceso_tipo)
+                        );
+                        
+                        -- Copy data from old table to new table
+                        INSERT INTO ProyectoAcceso_new (id, proyecto_id, orden, acceso_full_path, acceso_nombre, acceso_tipo, fecha_eliminacion)
+                        SELECT id, proyecto_id, orden, acceso_full_path, acceso_nombre, acceso_tipo, fecha_eliminacion
+                        FROM ProyectoAcceso;
+                        
+                        -- Drop old table
+                        DROP TABLE ProyectoAcceso;
+                        
+                        -- Rename new table to original name
+                        ALTER TABLE ProyectoAcceso_new RENAME TO ProyectoAcceso;
+                        
+                        -- Recreate indexes
+                        CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_proyecto_id ON ProyectoAcceso(proyecto_id);
+                        CREATE INDEX IF NOT EXISTS idx_proyecto_acceso_fecha_eliminacion ON ProyectoAcceso(fecha_eliminacion);"
                 }
             };
 

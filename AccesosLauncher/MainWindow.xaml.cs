@@ -2405,7 +2405,12 @@ namespace AccesosLauncher
                 ProyectoAccesos.Clear();
                 foreach (var acceso in accesos)
                 {
-                    acceso.Icon = IconHelper.GetIconImageSource(acceso.AccesoFullPath);
+                    acceso.Icon = acceso.AccesoTipo switch
+                    {
+                        "CarpetaDeTrabajo" => IconHelper.GetIconFromFile("Icons/CarpetaDeTrabajo.ico"),
+                        "Folder" => IconHelper.GetFolderIcon(),
+                        _ => IconHelper.GetIconImageSource(acceso.AccesoFullPath),
+                    };
                     ProyectoAccesos.Add(acceso);
                 }
                 RenderProyectoAccesos();
@@ -3044,7 +3049,7 @@ namespace AccesosLauncher
                 {
                     if (string.IsNullOrWhiteSpace(path)) continue;
 
-                    if (existingAccesos.Any(a => a.AccesoFullPath == path))
+                    if (existingAccesos.Any(a => a.AccesoFullPath == path && a.AccesoTipo == accesoTipo))
                     {
                         existingCount++;
                         continue;
