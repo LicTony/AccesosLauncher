@@ -228,10 +228,16 @@
                                         Padding="15,8" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
-                        <Border x:Name="toastPanel" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
-                                Margin="10" Padding="15,10" Background="#FF333333" CornerRadius="5"
-                                Visibility="Collapsed">
-                            <TextBlock x:Name="toastMessage" Foreground="White"/>
+                        <Border x:Name="toastPanel" Grid.Row="0" Grid.RowSpan="5" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Margin="15" Padding="16,12" Background="#DD333333" CornerRadius="8"
+                                Visibility="Collapsed" MinWidth="250" MaxWidth="400" IsHitTestVisible="False">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.5"/>
+                            </Border.Effect>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="toastIcon" Text="&#x2713;" Foreground="#4CAF50" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock x:Name="toastMessage" Foreground="White" FontSize="14" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Border>
                     </Grid>
                 </TabItem>

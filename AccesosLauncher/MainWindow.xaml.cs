@@ -87,6 +87,8 @@ namespace AccesosLauncher
             }
         }
 
+        private enum ToastType { Success, Warning, Error }
+
         private Timer? _searchDebounceTimer;
         private bool _proyectosLoaded;
         private bool _isEditingDescripcion;
@@ -95,6 +97,7 @@ namespace AccesosLauncher
         private CollectionViewSource? _groupedSource;
         private FileSystemWatcher? _watcher;
         private Timer? _debounceTimer;
+        private Timer? _toastTimer;
 
         private NotifyIcon? _notifyIcon;
         private bool _reallyExit;
@@ -565,6 +568,15 @@ namespace AccesosLauncher
             }
             _watcher?.Dispose();
             _debounceTimer?.Dispose();
+            _toastTimer?.Stop();
+            _toastTimer?.Dispose();
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            _toastTimer?.Stop();
+            _toastTimer?.Dispose();
+            base.OnClosing(e);
         }
 
         private UserSettings? _userSettings;
@@ -2616,7 +2628,7 @@ namespace AccesosLauncher
                 try
                 {
                     _databaseHelper.DeleteProyectoAcceso(acceso.Id);
-                    ShowToast("Acceso eliminado");
+                    ShowToast("Acceso eliminado", ToastType.Error);
                     LoadProyectoAccesos();
                 }
                 catch (Exception ex)
@@ -2659,14 +2671,59 @@ namespace AccesosLauncher
             }
         }
 
-        private void ShowToast(string message)
+        private void ShowToast(string message, ToastType type = ToastType.Success, int durationSeconds = 5)
         {
-            if (toastPanel == null || toastMessage == null) return;
+            if (toastPanel == null || toastMessage == null || toastIcon == null) return;
+
+            // Cancelar toast anterior si existe
+            _toastTimer?.Stop();
+            _toastTimer?.Dispose();
+
+            // Configurar mensaje
             toastMessage.Text = message;
+
+            // Configurar icono según tipo
+            string iconText;
+            string iconColor;
+            switch (type)
+            {
+                case ToastType.Warning:
+                    iconText = "\u26A0"; // ⚠
+                    iconColor = "#FFC107";
+                    break;
+                case ToastType.Error:
+                    iconText = "\u2717"; // ✕
+                    iconColor = "#F44336";
+                    break;
+                case ToastType.Success:
+                default:
+                    iconText = "\u2713"; // ✓
+                    iconColor = "#4CAF50";
+                    break;
+            }
+            toastIcon.Text = iconText;
+            toastIcon.Foreground = new SolidColorBrush(System.Windows.Media.ColorConverter.ConvertFromString(iconColor) as System.Windows.Media.Color? ?? System.Windows.Media.Colors.Green);
+
+            // Ajustar duración según longitud del mensaje
+            if (message.Length > 50)
+                durationSeconds = 7;
+
+            // Mostrar con fade-in
+            toastPanel.Opacity = 0;
             toastPanel.Visibility = Visibility.Visible;
-            var timer = new Timer(3000) { AutoReset = false };
-            timer.Elapsed += (_, __) => Dispatcher.Invoke(() => toastPanel.Visibility = Visibility.Collapsed);
-            timer.Start();
+
+            var fadeIn = new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200));
+            toastPanel.BeginAnimation(System.Windows.UIElement.OpacityProperty, fadeIn);
+
+            // Timer para ocultar
+            _toastTimer = new Timer(durationSeconds * 1000) { AutoReset = false };
+            _toastTimer.Elapsed += (_, __) => Dispatcher.Invoke(() =>
+            {
+                var fadeOut = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(300));
+                fadeOut.Completed += (s, e) => toastPanel.Visibility = Visibility.Collapsed;
+                toastPanel.BeginAnimation(System.Windows.UIElement.OpacityProperty, fadeOut);
+            });
+            _toastTimer.Start();
         }
 
         #endregion
@@ -2844,7 +2901,7 @@ namespace AccesosLauncher
                 try
                 {
                     _databaseHelper.DeleteProyecto(SelectedProyecto.Id);
-                    ShowToast("Proyecto eliminado");
+                    ShowToast("Proyecto eliminado", ToastType.Error);
                     SelectedProyecto = null;
                     LoadProyectos();
                 }
@@ -2865,7 +2922,7 @@ namespace AccesosLauncher
                 {
                     _databaseHelper.DeactivateProyecto(SelectedProyecto.Id);
                     SelectedProyecto.Activo = "N";
-                    ShowToast("Proyecto desactivado");
+                    ShowToast("Proyecto desactivado", ToastType.Error);
                 }
                 else
                 {
@@ -3079,7 +3136,8 @@ namespace AccesosLauncher
                     {
                         message += existingCount > 0 && addedCount > 0 ? $" ({existingCount} ya existían)" : (addedCount == 0 ? $"({existingCount} ya existían)" : "");
                     }
-                    ShowToast(message.Trim());
+                    var toastType = message.Contains("ya existían") ? ToastType.Warning : ToastType.Success;
+                    ShowToast(message.Trim(), toastType);
                     LoadProyectoAccesos();
                     dialog.Close();
                 }
