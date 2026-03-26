@@ -36,9 +36,9 @@
         </Grid>
         
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Background="#161b22" Margin="10">
-            <Button Content="Ayuda" Click="btnAyuda_Click" Width="100" Height="35" Margin="0,0,10,0"/>
-            <Button Content="Guardar" Click="btnGuardar_Click" Width="100" Height="35" Margin="0,0,10,0"/>
-            <Button Content="Cancelar" Click="btnCancelar_Click" Width="100" Height="35"/>
+            <Button Content="_Ayuda" Click="btnAyuda_Click" Width="100" Height="35" Margin="0,0,10,0"/>
+            <Button Content="_Guardar" Click="btnGuardar_Click" Width="100" Height="35" Margin="0,0,10,0"/>
+            <Button Content="_Cancelar" Click="btnCancelar_Click" Width="100" Height="35"/>
         </StackPanel>
     </Grid>
 </Window>

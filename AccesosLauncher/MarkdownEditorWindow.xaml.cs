@@ -181,6 +181,33 @@ namespace AccesosLauncher
             {
                 Owner = this
             };
+
+            // Suscribirse al evento para insertar sintaxis al hacer doble-click
+            _helpWindow.SyntaxSelected += (inicio, fin) =>
+            {
+                var selStart = txtEditor.SelectionStart;
+                var selLength = txtEditor.SelectionLength;
+
+                if (selLength > 0)
+                {
+                    // Hay texto seleccionado: envolver con inicio + selección + fin
+                    var selectedText = txtEditor.SelectedText;
+                    var wrapped = inicio + selectedText + fin;
+                    txtEditor.Text = txtEditor.Text.Remove(selStart, selLength).Insert(selStart, wrapped);
+                    txtEditor.CaretIndex = selStart + wrapped.Length;
+                }
+                else
+                {
+                    // Sin selección: insertar sintaxis completa en la posición del cursor
+                    var fullSyntax = inicio + fin;
+                    txtEditor.Text = txtEditor.Text.Insert(selStart, fullSyntax);
+                    // Posicionar cursor entre inicio y fin para que el usuario escriba ahí
+                    txtEditor.CaretIndex = selStart + inicio.Length;
+                }
+
+                txtEditor.Focus();
+            };
+
             _helpWindow.Show();
         }
 
