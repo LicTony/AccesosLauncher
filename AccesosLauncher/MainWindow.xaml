@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AccesosLauncher"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:wpf="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Accesos" Width="800" Height="600"
         Loaded="Window_Loaded"
         Closing="Window_Closing"
@@ -169,7 +170,8 @@
                                   SelectedItem="{Binding SelectedProyecto}"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                   IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow"
-                                  Margin="10,5" Sorting="DgProyectos_Sorting">
+                                  Margin="10,5" Sorting="DgProyectos_Sorting"
+                                  SelectionChanged="DgProyectos_SelectionChanged">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Nombre" Binding="{Binding Nombre}" Width="*"/>
                                 <DataGridTextColumn Header="Activo" Binding="{Binding ActivoIcono}" Width="90"/>
@@ -190,15 +192,14 @@
                                         <TextBlock Text="Descripcion" Foreground="White" FontWeight="Bold" VerticalAlignment="Center"/>
                                         <Button x:Name="btnEditarDescripcion" Content="✏️" Click="BtnEditarDescripcion_Click" 
                                                 Margin="10,0,0,0" Padding="5,2" IsEnabled="False" ToolTip="Editar descripcion"/>
+                                        <Button x:Name="btnPreviewDescripcion" Content="👁" Click="BtnPreviewDescripcion_Click" 
+                                                Margin="5,0,0,0" Padding="5,2" Visibility="Collapsed" ToolTip="Vista previa"/>
                                         <Button x:Name="btnGuardarDescripcion" Content="✓" Click="BtnGuardarDescripcion_Click" 
                                                 Margin="5,0,0,0" Padding="5,2" Visibility="Collapsed" ToolTip="Guardar"/>
                                         <Button x:Name="btnCancelarDescripcion" Content="✕" Click="BtnCancelarDescripcion_Click" 
                                                 Margin="5,0,0,0" Padding="5,2" Visibility="Collapsed" ToolTip="Cancelar"/>
                                     </StackPanel>
-                                    <RichTextBox x:Name="rtxtDescripcion" IsReadOnly="True" 
-                                                 VerticalContentAlignment="Top" BorderThickness="0"
-                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
-                                                 Margin="5"/>
+                                    <wpf:WebView2 x:Name="webViewDescripcion" DefaultBackgroundColor="#0d1117"/>
                                 </DockPanel>
                             </Border>
                             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="Gray" DragCompleted="GridSplitterProyectos_DragCompleted"/>

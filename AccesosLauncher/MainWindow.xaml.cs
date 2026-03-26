@@ -18,6 +18,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.VisualBasic;
 using Path = System.IO.Path;
 using Timer = System.Timers.Timer;
@@ -93,6 +94,9 @@ namespace AccesosLauncher
         private bool _proyectosLoaded;
         private bool _isEditingDescripcion;
         private string _originalDescripcionText = string.Empty;
+        private bool _webViewInitialized;
+        private bool _isPreviewMode;
+        private bool _webViewAvailable = true;
 
         private CollectionViewSource? _groupedSource;
         private FileSystemWatcher? _watcher;
@@ -235,6 +239,7 @@ namespace AccesosLauncher
             await LoadFaviconsAsync(); // Lanza la carga asíncrona de favicons en segundo plano
             SetupWatcher();
             SetupTrayIcon();
+            await InitializeWebView2Async();
 
             // Arranca en segundo plano
             //HideToTray();
@@ -251,6 +256,36 @@ namespace AccesosLauncher
             }
 
             e.Accepted = accepted;
+        }
+
+        private async Task InitializeWebView2Async()
+        {
+            try
+            {
+                var env = await CoreWebView2Environment.CreateAsync();
+                await webViewDescripcion.EnsureCoreWebView2Async(env);
+                _webViewInitialized = true;
+                System.Diagnostics.Debug.WriteLine("[WebView2] Inicialización exitosa");
+            }
+            catch (Exception ex)
+            {
+                _webViewAvailable = false;
+                _webViewInitialized = true;
+                
+                // Guardar el error para debug
+                System.Diagnostics.Debug.WriteLine($"[WebView2] Error: {ex.Message}");
+                
+                // Mostrar mensaje de fallback al usuario
+                MessageBox.Show(
+                    "Microsoft Edge WebView2 Runtime no está disponible.\n\n" +
+                    $"Error: {ex.Message}\n\n" +
+                    "La descripción de proyectos se mostrará sin formato.\n\n" +
+                    "Para habilitar el renderizado de Markdown, descarga WebView2 desde:\n" +
+                    "https://developer.microsoft.com/microsoft-edge/webview2/",
+                    "WebView2 no disponible",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }
 
         private bool MatchesTipoCarpeta(AppItem item)
@@ -2383,8 +2418,12 @@ namespace AccesosLauncher
             }
             else
             {
-                rtxtDescripcion.Document.Blocks.Clear();
-                rtxtDescripcion.Document.Blocks.Add(new Paragraph(new Run("Seleccione un proyecto para ver su descripcion")));
+                // Cuando no hay proyecto seleccionado, mostrar mensaje en WebView2
+                if (_webViewInitialized && _webViewAvailable)
+                {
+                    var html = MarkdownRendererHelper.GetHtmlTemplate("Seleccione un proyecto para ver su descripción", isEditing: false);
+                    webViewDescripcion.NavigateToString(html);
+                }
                 wrapPanelAccesos.Children.Clear();
             }
         }
@@ -2392,19 +2431,20 @@ namespace AccesosLauncher
         private void LoadProyectoDescripcion()
         {
             if (SelectedProyecto == null) return;
-            rtxtDescripcion.Document.Blocks.Clear();
-            if (!string.IsNullOrEmpty(SelectedProyecto.DescripcionLarga))
+
+            var content = SelectedProyecto.DescripcionLarga ?? string.Empty;
+            _originalDescripcionText = content;
+
+            if (!_webViewInitialized || !_webViewAvailable)
             {
-                var flowDoc = new FlowDocument();
-                var paragraph = new Paragraph(new Run(SelectedProyecto.DescripcionLarga));
-                flowDoc.Blocks.Add(paragraph);
-                rtxtDescripcion.Document = flowDoc;
+                // Fallback si WebView2 no está disponible
+                return;
             }
-            else
-            {
-                rtxtDescripcion.Document.Blocks.Add(new Paragraph(new Run("(Sin descripcion)")));
-            }
-            _originalDescripcionText = SelectedProyecto.DescripcionLarga ?? string.Empty;
+
+            // Renderizar contenido en WebView2 (modo preview, no edición)
+            var html = MarkdownRendererHelper.GetHtmlTemplate(content, isEditing: false);
+            webViewDescripcion.NavigateToString(html);
+            _isPreviewMode = true;
             SetDescripcionEditingMode(false);
         }
 
@@ -2661,13 +2701,43 @@ namespace AccesosLauncher
         private void SetDescripcionEditingMode(bool editing)
         {
             _isEditingDescripcion = editing;
-            rtxtDescripcion.IsReadOnly = !editing;
-            btnEditarDescripcion.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
-            btnGuardarDescripcion.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
-            btnCancelarDescripcion.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
-            if (!editing)
+            
+            if (!_webViewInitialized || !_webViewAvailable)
             {
-                _originalDescripcionText = SelectedProyecto?.DescripcionLarga ?? string.Empty;
+                btnEditarDescripcion.Visibility = editing ? Visibility.Collapsed : Visibility.Visible;
+                btnPreviewDescripcion.Visibility = Visibility.Collapsed;
+                btnGuardarDescripcion.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+                btnCancelarDescripcion.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+                return;
+            }
+
+            if (editing)
+            {
+                // Modo edición: mostrar textarea con el contenido actual
+                var content = _originalDescripcionText;
+                var html = MarkdownRendererHelper.GetHtmlTemplate(content, isEditing: true);
+                webViewDescripcion.NavigateToString(html);
+                _isPreviewMode = false;
+
+                // En modo edición: mostrar Preview, Guardar, Cancelar
+                btnEditarDescripcion.Visibility = Visibility.Collapsed;
+                btnPreviewDescripcion.Visibility = Visibility.Visible;
+                btnGuardarDescripcion.Visibility = Visibility.Visible;
+                btnCancelarDescripcion.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Modo preview: renderizar contenido
+                var content = SelectedProyecto?.DescripcionLarga ?? string.Empty;
+                var html = MarkdownRendererHelper.GetHtmlTemplate(content, isEditing: false);
+                webViewDescripcion.NavigateToString(html);
+                _isPreviewMode = true;
+
+                // En modo preview: mostrar Editar
+                btnEditarDescripcion.Visibility = Visibility.Visible;
+                btnPreviewDescripcion.Visibility = Visibility.Collapsed;
+                btnGuardarDescripcion.Visibility = Visibility.Collapsed;
+                btnCancelarDescripcion.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -2963,22 +3033,126 @@ namespace AccesosLauncher
         {
         }
 
-        private void BtnEditarDescripcion_Click(object sender, RoutedEventArgs e)
+        private void DgProyectos_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            SetDescripcionEditingMode(true);
+            if (SelectedProyecto != null)
+            {
+                LoadProyectoDescripcion();
+                LoadProyectoAccesos();
+                UpdateActivarDesactivarButton();
+            }
+            else
+            {
+                // Cuando no hay proyecto seleccionado, mostrar mensaje en WebView2
+                if (_webViewInitialized && _webViewAvailable)
+                {
+                    var html = MarkdownRendererHelper.GetHtmlTemplate("Seleccione un proyecto para ver su descripción", isEditing: false);
+                    webViewDescripcion.NavigateToString(html);
+                }
+                wrapPanelAccesos.Children.Clear();
+            }
         }
 
-        private void BtnGuardarDescripcion_Click(object sender, RoutedEventArgs e)
+        private void BtnEditarDescripcion_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null) return;
+
+            // Abrir la nueva ventana de edición de Markdown
+            var connectionString = App.Configuration.GetConnectionString("Sqlite") ?? "";
+            var editor = new MarkdownEditorWindow(
+                SelectedProyecto.DescripcionLarga ?? string.Empty,
+                SelectedProyecto.Id,
+                connectionString);
+
+            if (editor.ShowDialog() == true && !string.IsNullOrEmpty(editor.EditedContent))
+            {
+                // Actualizar el proyecto con el nuevo contenido
+                _databaseHelper.UpdateProyecto(
+                    SelectedProyecto.Id,
+                    SelectedProyecto.Nombre,
+                    SelectedProyecto.DescripcionCorta,
+                    editor.EditedContent);
+
+                // Actualizar el modelo local
+                SelectedProyecto.DescripcionLarga = editor.EditedContent;
+
+                // Actualizar el preview en el WebView2 de MainWindow
+                var html = MarkdownRendererHelper.GetHtmlTemplate(editor.EditedContent, isEditing: false);
+                webViewDescripcion.NavigateToString(html);
+            }
+        }
+
+        private async void BtnPreviewDescripcion_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProyecto == null || !_webViewInitialized || !_webViewAvailable) return;
+
+            try
+            {
+                // Extraer texto del textarea
+                var script = "document.getElementById('editor').value;";
+                var result = await webViewDescripcion.ExecuteScriptAsync(script);
+
+                if (!string.IsNullOrEmpty(result) && result != "null")
+                {
+                    // Limpiar las comillas del resultado JSON
+                    var editorContent = result.Trim('"');
+                    editorContent = editorContent.Replace("\\\"", "\"").Replace("\\\\", "\\");
+
+                    // Renderizar el contenido en modo preview
+                    var html = MarkdownRendererHelper.GetHtmlTemplate(editorContent, isEditing: false);
+                    webViewDescripcion.NavigateToString(html);
+                    _isPreviewMode = true;
+
+                    // Cambiar botones
+                    btnPreviewDescripcion.Visibility = Visibility.Collapsed;
+                    btnEditarDescripcion.Visibility = Visibility.Visible;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al previsualizar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void BtnGuardarDescripcion_Click(object sender, RoutedEventArgs e)
         {
             if (SelectedProyecto == null) return;
 
             try
             {
-                var textRange = new TextRange(rtxtDescripcion.Document.ContentStart, rtxtDescripcion.Document.ContentEnd);
-                var newText = textRange.Text.TrimEnd();
+                string newText;
+
+                if (!_webViewInitialized || !_webViewAvailable)
+                {
+                    // Fallback: usar texto original si WebView2 no está disponible
+                    newText = _originalDescripcionText;
+                }
+                else if (_isPreviewMode)
+                {
+                    // Si estamos en modo preview, usar el contenido original
+                    newText = SelectedProyecto.DescripcionLarga ?? string.Empty;
+                }
+                else
+                {
+                    // Modo edición: extraer texto del textarea
+                    var script = "document.getElementById('editor').value;";
+                    var result = await webViewDescripcion.ExecuteScriptAsync(script);
+
+                    if (!string.IsNullOrEmpty(result) && result != "null")
+                    {
+                        // Limpiar las comillas del resultado JSON
+                        newText = result.Trim('"');
+                        newText = newText.Replace("\\\"", "\"").Replace("\\\\", "\\");
+                    }
+                    else
+                    {
+                        newText = string.Empty;
+                    }
+                }
 
                 _databaseHelper.UpdateProyecto(SelectedProyecto.Id, SelectedProyecto.Nombre, SelectedProyecto.DescripcionCorta, newText);
                 SelectedProyecto.DescripcionLarga = newText;
+                _originalDescripcionText = newText;
                 ShowToast("Descripcion guardada");
                 SetDescripcionEditingMode(false);
             }
@@ -2990,6 +3164,8 @@ namespace AccesosLauncher
 
         private void BtnCancelarDescripcion_Click(object sender, RoutedEventArgs e)
         {
+            // Restaurar contenido original
+            _originalDescripcionText = SelectedProyecto?.DescripcionLarga ?? string.Empty;
             LoadProyectoDescripcion();
             SetDescripcionEditingMode(false);
         }

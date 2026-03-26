@@ -1,0 +1,23 @@
+<Window x:Class="AccesosLauncher.MarkdownHelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Ayuda de Markdown"
+        Width="500"
+        Height="450"
+        WindowStartupLocation="CenterOwner"
+        Topmost="True"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Background="#161b22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="15">
+            <TextBlock x:Name="txtHelp" FontFamily="Consolas" FontSize="13" Foreground="#c9d1d9" TextWrapping="Wrap"/>
+        </ScrollViewer>
+        
+        <Button Grid.Row="1" Content="Cerrar" Click="btnCerrar_Click" Width="100" Height="30" Margin="15" HorizontalAlignment="Right"/>
+    </Grid>
+</Window>
