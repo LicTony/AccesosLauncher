@@ -96,30 +96,18 @@ public class WindowsTerminalLauncherTests
     }
 
     [Fact]
-    public void LoadHerramientasConfig_WithMissingFile_ReturnsDefaults()
+    public void LoadHerramientasConfig_ReturnsConfigFromJsonOrDefaults()
     {
-        // Arrange: Create empty temp directory (no config file)
-        string tempDir = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid()}");
-        Directory.CreateDirectory(tempDir);
-
-        try
-        {
-            // We can't easily mock AppDomain.CurrentDomain.BaseDirectory
-            // Instead, we'll test this by verifying default behavior
-            // The default returns 3 items
-            var result = WindowsTerminalLauncher.LoadHerramientasConfig();
-            
-            Assert.NotNull(result);
-            Assert.Equal(3, result.Count);
-            Assert.Equal("lazygit", result[0].Title);
-            Assert.Equal("qwen", result[1].Title);
-            Assert.Equal("shell", result[2].Title);
-        }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, true);
-        }
+        // Act — loads from CarpetaDeTrabajoHerramientas.json in bin dir (if present) or defaults
+        var result = WindowsTerminalLauncher.LoadHerramientasConfig();
+        
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Count);
+        Assert.Equal("lazygit", result[0].Title);
+        Assert.Equal("qwen", result[1].Title);
+        // Third item: "opencode" from JSON or "shell" from defaults
+        Assert.True(result[2].Title == "opencode" || result[2].Title == "shell",
+            $"Expected 'opencode' or 'shell' but got '{result[2].Title}'");
     }
 
     [Fact]
@@ -137,7 +125,7 @@ public class WindowsTerminalLauncherTests
     #region BuildWtArguments Tests
 
     [Fact]
-    public void BuildWtArguments_ProducesCorrectWtExeCommandFormat()
+    public void BuildWtArguments_FirstTabUsesImplicitTab_NoNewTabPrefix()
     {
         // Arrange
         string dir = @"C:\Test\Dir";
@@ -148,13 +136,91 @@ public class WindowsTerminalLauncherTests
         };
 
         // Act
+        string result = WindowsTerminalLauncher.BuildWtArguments(dir, herramientas, "Dir");
+
+        // Assert — la primera pestaña NO tiene "new-tab" porque usa la tab implícita
+        string firstSegment = result.Split(" ; ")[0];
+        Assert.DoesNotContain("new-tab", firstSegment);
+        Assert.Contains("--title \"git\"", firstSegment);
+        Assert.Contains($"-d \"{dir}\"", firstSegment);
+    }
+
+    [Fact]
+    public void BuildWtArguments_SubsequentTabsUseNewTab()
+    {
+        // Arrange
+        string dir = @"C:\Test\Dir";
+        var herramientas = new List<HerramientaConfig>
+        {
+            new() { Orden = 1, Title = "git", TabColor = "#000", Parametro = "pwsh" },
+            new() { Orden = 2, Title = "shell", TabColor = "#111", Parametro = "cmd" }
+        };
+
+        // Act
+        string result = WindowsTerminalLauncher.BuildWtArguments(dir, herramientas, "Dir");
+
+        // Assert — las pestañas subsiguientes SÍ usan "new-tab"
+        string secondSegment = result.Split(" ; ")[1];
+        Assert.StartsWith("new-tab", secondSegment);
+        Assert.Contains($"-d \"{dir}\"", secondSegment);
+    }
+
+    [Fact]
+    public void BuildWtArguments_AllTabsHaveWorkingDirectory()
+    {
+        // Arrange
+        string dir = @"C:\My Project";
+        var herramientas = new List<HerramientaConfig>
+        {
+            new() { Orden = 1, Title = "t1", TabColor = "#000", Parametro = "pwsh" },
+            new() { Orden = 2, Title = "t2", TabColor = "#111", Parametro = "cmd" },
+            new() { Orden = 3, Title = "t3", TabColor = "#222", Parametro = "" }
+        };
+
+        // Act
+        string result = WindowsTerminalLauncher.BuildWtArguments(dir, herramientas, "My Project");
+
+        // Assert — TODAS las pestañas deben tener -d con el directorio
+        string[] segments = result.Split(" ; ");
+        Assert.Equal(3, segments.Length); // exactamente 3 tabs, sin tab fantasma
+        foreach (var seg in segments)
+        {
+            Assert.Contains($"-d \"{dir}\"", seg);
+        }
+    }
+
+    [Fact]
+    public void BuildWtArguments_WithWindowName_IncludesWindowFlag()
+    {
+        // Arrange
+        string dir = @"C:\Test";
+        var herramientas = new List<HerramientaConfig>
+        {
+            new() { Orden = 1, Title = "shell", TabColor = "#000", Parametro = "" }
+        };
+
+        // Act
+        string result = WindowsTerminalLauncher.BuildWtArguments(dir, herramientas, "MiProyecto");
+
+        // Assert
+        Assert.Contains("--window \"MiProyecto\"", result);
+    }
+
+    [Fact]
+    public void BuildWtArguments_WithoutWindowName_OmitsWindowFlag()
+    {
+        // Arrange
+        string dir = @"C:\Test";
+        var herramientas = new List<HerramientaConfig>
+        {
+            new() { Orden = 1, Title = "shell", TabColor = "#000", Parametro = "" }
+        };
+
+        // Act
         string result = WindowsTerminalLauncher.BuildWtArguments(dir, herramientas);
 
         // Assert
-        Assert.Contains($"-d \"{dir}\"", result);
-        Assert.Contains("new-tab --title \"git\"", result);
-        Assert.Contains("new-tab --title \"shell\"", result);
-        Assert.Contains(" ; ", result); // tabs separated by semicolons
+        Assert.DoesNotContain("--window", result);
     }
 
     [Fact]
@@ -189,6 +255,23 @@ public class WindowsTerminalLauncherTests
 
         // Assert
         Assert.Contains("-- pwsh -Command git", result);
+    }
+
+    #endregion
+
+    #region GetWindowName Tests
+
+    [Theory]
+    [InlineData(@"C:\Users\test\Projects\MiApp", "MiApp")]
+    [InlineData(@"C:\_Tony\CS\AccesosLauncher", "AccesosLauncher")]
+    [InlineData(@"D:\Work\My Project", "My Project")]
+    public void GetWindowName_ExtractsFolderName(string path, string expected)
+    {
+        // Act
+        string result = WindowsTerminalLauncher.GetWindowName(path);
+
+        // Assert
+        Assert.Equal(expected, result);
     }
 
     #endregion

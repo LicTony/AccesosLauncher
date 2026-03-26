@@ -28,10 +28,13 @@ public static class WindowsTerminalLauncher
         // 3. Cargar configuración desde JSON (o usar defaults)
         List<HerramientaConfig> herramientas = LoadHerramientasConfig();
 
-        // 4. Armar los argumentos para wt.exe
-        string wtArgs = BuildWtArguments(localPath, herramientas);
+        // 4. Obtener nombre de la carpeta del proyecto para la ventana
+        string windowName = GetWindowName(localPath);
 
-        // 5. Lanzar el proceso — sin ventana propia, sin bloquear el hilo UI
+        // 5. Armar los argumentos para wt.exe
+        string wtArgs = BuildWtArguments(localPath, herramientas, windowName);
+
+        // 6. Lanzar el proceso — sin ventana propia, sin bloquear el hilo UI
         var psi = new ProcessStartInfo
         {
             FileName = "wt.exe",
@@ -41,6 +44,17 @@ public static class WindowsTerminalLauncher
         };
 
         Process.Start(psi);
+    }
+
+    /// <summary>
+    /// Extrae el nombre de la carpeta del proyecto para usar como identificador de ventana.
+    /// Si ya existe una ventana con ese nombre, wt.exe reutiliza esa ventana.
+    /// </summary>
+    /// <param name="localPath">Path completo del directorio del proyecto</param>
+    /// <returns>Nombre de la carpeta del proyecto</returns>
+    internal static string GetWindowName(string localPath)
+    {
+        return new DirectoryInfo(localPath).Name;
     }
 
     /// <summary>
@@ -98,35 +112,47 @@ public static class WindowsTerminalLauncher
 
     /// <summary>
     /// Construye los argumentos para wt.exe basados en la configuración de herramientas.
+    /// La primera herramienta usa la pestaña implícita de wt.exe (sin new-tab),
+    /// las siguientes usan new-tab. Todas reciben -d para el directorio de trabajo.
+    /// Usa --window con el nombre del proyecto para reutilizar ventanas existentes.
     /// </summary>
     /// <param name="dir">Directorio de trabajo</param>
     /// <param name="herramientas">Lista de configuraciones de herramientas</param>
+    /// <param name="windowName">Nombre de la ventana para reusar instancia (null = nueva ventana)</param>
     /// <returns>Argumentos formateados para wt.exe</returns>
-    internal static string BuildWtArguments(string dir, List<HerramientaConfig> herramientas)
+    internal static string BuildWtArguments(string dir, List<HerramientaConfig> herramientas, string? windowName = null)
     {
-        // Envolvemos el path en comillas para manejar espacios
         string quotedDir = $"\"{dir}\"";
-        var args = new List<string> { $"-d {quotedDir}" };
+        var segments = new List<string>();
 
-        foreach (var herramienta in herramientas)
+        for (int i = 0; i < herramientas.Count; i++)
         {
-            var tabArgs = new List<string>
-            {
-                $"new-tab --title \"{herramienta.Title}\" --tabColor \"{herramienta.TabColor}\""
-            };
+            var h = herramientas[i];
+            var parts = new List<string>();
 
-            // Solo agregar -d si no es la primera pestaña
-            if (args.Count > 1)
-                tabArgs.Insert(1, $"-d {quotedDir}");
+            if (i == 0)
+            {
+                // Primera pestaña: usa la tab implícita de wt.exe (sin new-tab).
+                // --window reutiliza ventana existente con ese nombre, o crea una nueva.
+                if (!string.IsNullOrWhiteSpace(windowName))
+                    parts.Add($"--window \"{windowName}\"");
+
+                parts.Add($"--title \"{h.Title}\" --tabColor \"{h.TabColor}\" -d {quotedDir}");
+            }
+            else
+            {
+                // Pestañas subsiguientes: usan new-tab con su propio -d
+                parts.Add($"new-tab --title \"{h.Title}\" --tabColor \"{h.TabColor}\" -d {quotedDir}");
+            }
 
             // Agregar comando si existe
-            if (!string.IsNullOrWhiteSpace(herramienta.Parametro))
-                tabArgs.Add($"-- {herramienta.Parametro}");
+            if (!string.IsNullOrWhiteSpace(h.Parametro))
+                parts.Add($"-- {h.Parametro}");
 
-            args.Add(string.Join(" ", tabArgs));
+            segments.Add(string.Join(" ", parts));
         }
 
-        return string.Join(" ; ", args);
+        return string.Join(" ; ", segments);
     }
 
     /// <summary>
