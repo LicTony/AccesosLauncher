@@ -714,6 +714,86 @@ namespace AccesosLauncher
                 var nextIndex = (currentIndex + 1) % values.Length;
                 SelectedTipoCarpeta = values[nextIndex];
             }
+
+            // Ctrl+F1..F12 → ejecutar acceso del proyecto seleccionado
+            if (Keyboard.Modifiers == ModifierKeys.Control && MainTabControl.SelectedIndex == 1)
+            {
+                int accesoIndex = e.Key switch
+                {
+                    Key.F1  => 0,
+                    Key.F2  => 1,
+                    Key.F3  => 2,
+                    Key.F4  => 3,
+                    Key.F5  => 4,
+                    Key.F6  => 5,
+                    Key.F7  => 6,
+                    Key.F8  => 7,
+                    Key.F9  => 8,
+                    Key.F10 => 9,
+                    Key.F11 => 10,
+                    Key.F12 => 11,
+                    _       => -1
+                };
+
+                if (accesoIndex >= 0 && accesoIndex < ProyectoAccesos.Count)
+                {
+                    e.Handled = true;
+                    ExecuteProyectoAcceso(ProyectoAccesos[accesoIndex]);
+                }
+            }
+        }
+
+        private void ExecuteProyectoAcceso(Models.ProyectoAcceso acceso)
+        {
+            if (!acceso.PathExiste)
+            {
+                var result = MessageBox.Show(
+                    $"El archivo '{acceso.AccesoNombre}' no se encontró en '{acceso.AccesoFullPath}'. ¿Deseas eliminarlo del proyecto?",
+                    "Archivo no encontrado",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (result == MessageBoxResult.Yes)
+                    DeleteProyectoAcceso(acceso);
+                return;
+            }
+
+            try
+            {
+                if (acceso.AccesoTipo == "Url" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.Url.ToString())
+                {
+                    Process.Start(new ProcessStartInfo(acceso.AccesoFullPath) { UseShellExecute = true });
+                }
+                else if (acceso.AccesoTipo == "CarpetaDeTrabajo" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.CarpetaDeTrabajo.ToString())
+                {
+                    try
+                    {
+                        Core.WindowsTerminalLauncher.OpenInWindowsTerminal(acceso.AccesoFullPath);
+                    }
+                    catch (DirectoryNotFoundException ex)
+                    {
+                        MessageBox.Show(ex.Message, "Directorio no encontrado", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, "Error al abrir terminal", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                else
+                {
+                    var psi = new ProcessStartInfo(acceso.AccesoFullPath)
+                    {
+                        UseShellExecute = true,
+                        WorkingDirectory = Path.GetDirectoryName(acceso.AccesoFullPath) ?? BaseDir
+                    };
+                    Process.Start(psi);
+                }
+
+                UpdateProyectoLastAccess();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"No se pudo abrir:\n{acceso.AccesoFullPath}\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void ItemButton_Click(object sender, RoutedEventArgs e)
@@ -1404,6 +1484,7 @@ namespace AccesosLauncher
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Escape", Description = "Ocultar la ventana y minimizar a la bandeja del sistema" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + T", Description = "Cambiar entre tipos de carpeta (Ambos, Personal, Laboral)" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tab", Description = "Navegar entre las pestañas principales (Accesos, Más Usados, Configuración, Acerca de)" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + F1..F12 (tab Proyectos)", Description = "Ejecutar el acceso 1 al 12 del proyecto seleccionado" });
         }
 
         private void FlattenJson(JsonElement element, string prefix = "")
@@ -2487,6 +2568,7 @@ namespace AccesosLauncher
             emptyStateAccesos.Visibility = Visibility.Collapsed;
             wrapPanelAccesos.Visibility = Visibility.Visible;
 
+            int accesoRenderIndex = 0;
             foreach (var acceso in ProyectoAccesos)
             {
                 var button = new System.Windows.Controls.Button
@@ -2529,6 +2611,22 @@ namespace AccesosLauncher
                 };
                 stack.Children.Add(text);
 
+                // Badge Ctrl+F{n} para los primeros 12 accesos
+                if (accesoRenderIndex < 12)
+                {
+                    var hotkey = accesoRenderIndex + 1; // F1..F12
+                    var badge = new System.Windows.Controls.TextBlock
+                    {
+                        Text = $"Ctrl+F{hotkey}",
+                        FontSize = 9,
+                        HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 3, 0, 0),
+                        Foreground = new System.Windows.Media.SolidColorBrush(
+                            System.Windows.Media.Color.FromArgb(200, 120, 200, 255))
+                    };
+                    stack.Children.Add(badge);
+                }
+
                 if (!acceso.PathExiste)
                 {
                     var warning = new System.Windows.Controls.TextBlock
@@ -2543,6 +2641,7 @@ namespace AccesosLauncher
 
                 button.Content = stack;
                 button.Click += ProyectoAcceso_Click;
+                accesoRenderIndex++;
 
                 var contextMenu = new ContextMenu();
                 var renameItem = new MenuItem { Header = "Renombrar" };
