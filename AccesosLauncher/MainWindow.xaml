@@ -39,8 +39,8 @@
                         <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="10">
                             <TextBlock Text="Tipo:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White"/>
                             <ComboBox x:Name="TipoCarpetaComboBox" Width="120"
-                                      ItemsSource="{Binding Source={local:EnumValues {x:Type local:TipoCarpeta}}}"
-                                      SelectedItem="{Binding SelectedTipoCarpeta}"
+                                      ItemsSource="{Binding AllAccessTypes}"
+                                      SelectedItem="{Binding SelectedTipoCarpetaName, Mode=TwoWay}"
                                       VerticalAlignment="Center">
                                 <ComboBox.Style>
                                     <Style TargetType="ComboBox">
@@ -79,10 +79,7 @@
                                                         <MenuItem Header="Abrir carpeta" Click="OpenFolderMenuItem_Click"/>
                                                         <MenuItem Header="Abrir todos los archivos de la carpeta" Click="OpenAllFilesMenuItem_Click"/>
                                                         <Separator/>
-                                                        <MenuItem Header="Tipo">
-                                                            <MenuItem Header="Personal" Tag="Personal"/>
-                                                            <MenuItem Header="Laboral" Tag="Laboral"/>
-                                                            <MenuItem Header="Ambos" Tag="Ambos"/>
+                                                        <MenuItem Header="Tipo" x:Name="TipoSubmenu">
                                                         </MenuItem>
                                                         <Separator/>
                                                         <MenuItem Header="Crear nueva carpeta" Click="CreateFolderMenuItem_Click"/>
@@ -271,6 +268,55 @@
                             <Button Content="Maximizar / Normal" Click="ToggleWindowState_Click" Margin="10" Padding="10,5"/>
                             <Button Content="Guardar Cambios" Click="SaveSettings_Click" HorizontalAlignment="Right" Margin="10" Padding="10,5"/>
                         </StackPanel>
+                    </Grid>
+                </TabItem>
+                <TabItem x:Name="TiposAccesoTab" Header="Tipos de Acceso">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Header -->
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Gestión de Tipos de Acceso Personalizados" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                        
+                        <!-- Add new type -->
+                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="Nuevo tipo:" VerticalAlignment="Center" Foreground="White" Margin="0,0,10,0"/>
+                            <TextBox x:Name="NewCustomTypeTextBox" Width="200" Text="{Binding NewCustomTypeName, UpdateSourceTrigger=PropertyChanged}" Background="#30FFFFFF" Foreground="White"/>
+                            <Button Content="Agregar" Click="AddCustomType_Click" Margin="10,0,0,0" Padding="15,5"/>
+                        </StackPanel>
+                        
+                        <!-- Custom types list with actions -->
+                        <Grid Grid.Row="2" Grid.ColumnSpan="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <ListBox Grid.Row="0" ItemsSource="{Binding CustomAccessTypesList}" SelectedItem="{Binding SelectedCustomType}" Background="#20FFFFFF" Foreground="White" MinHeight="150">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Order}" Foreground="Gray" Margin="0,0,8,0" Width="20"/>
+                                            <TextBlock Text="{Binding Name}" Foreground="White" Padding="5"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="↑ Subir" Click="MoveUpCustomType_Click" Padding="10,5" Margin="0,0,5,0"/>
+                                <Button Content="↓ Bajar" Click="MoveDownCustomType_Click" Padding="10,5" Margin="0,0,10,0"/>
+                                <Button Content="Editar" Click="EditCustomType_Click" Padding="15,5" Margin="0,0,10,0"/>
+                                <Button Content="Eliminar" Click="RemoveCustomType_Click" Padding="15,5"/>
+                            </StackPanel>
+                        </Grid>
                     </Grid>
                 </TabItem>
                 <TabItem Header="Obtener icono">

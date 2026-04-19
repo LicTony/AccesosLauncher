@@ -56,6 +56,22 @@ namespace AccesosLauncher
 
         public ObservableCollection<SettingEntry> AppSettings { get; } = [];
         public ObservableCollection<KeyboardShortcut> KeyboardShortcuts { get; } = [];
+        
+        // CRUD Panel for Custom Access Types
+        public ObservableCollection<CustomAccessType> CustomAccessTypesList { get; } = [];
+        private CustomAccessType? _selectedCustomType;
+        public CustomAccessType? SelectedCustomType
+        {
+            get => _selectedCustomType;
+            set { _selectedCustomType = value; OnPropertyChanged(nameof(SelectedCustomType)); }
+        }
+        private string _newCustomTypeName = string.Empty;
+        public string NewCustomTypeName
+        {
+            get => _newCustomTypeName;
+            set { _newCustomTypeName = value; OnPropertyChanged(nameof(NewCustomTypeName)); }
+        }
+        
         private bool _settingsLoaded;
         
         private Models.Proyecto? _selectedProyecto;
@@ -128,10 +144,46 @@ namespace AccesosLauncher
                 {
                     _selectedTipoCarpeta = value;
                     OnPropertyChanged(nameof(SelectedTipoCarpeta));
+                    OnPropertyChanged(nameof(SelectedTipoCarpetaName));
                     _groupedSource?.View?.Refresh();
                 }
             }
         }
+
+        private string _selectedTipoCarpetaName = "Laboral";
+
+        public string SelectedTipoCarpetaName
+        {
+            get => _selectedTipoCarpetaName;
+            set
+            {
+                if (_selectedTipoCarpetaName != value)
+                {
+                    _selectedTipoCarpetaName = value;
+                    OnPropertyChanged(nameof(SelectedTipoCarpetaName));
+                    UpdateSelectedTipoFromName();
+                }
+            }
+        }
+
+        private void UpdateSelectedTipoFromName()
+        {
+            // Try to parse as enum first (base types)
+            if (Enum.TryParse<TipoCarpeta>(_selectedTipoCarpetaName, out var tipo))
+            {
+                _selectedTipoCarpeta = tipo;
+            }
+            else
+            {
+                // Custom type - store as string representation
+                _selectedTipoCarpeta = TipoCarpeta.Laboral; // Default fallback
+            }
+            OnPropertyChanged(nameof(SelectedTipoCarpeta));
+            _groupedSource?.View?.Refresh();
+            OnPropertyChanged(nameof(ResultCountText));
+        }
+
+        public List<string> AllAccessTypes { get; private set; } = new();
 
         public string SearchText
         {
@@ -152,9 +204,9 @@ namespace AccesosLauncher
         {
             get
             {
-                int count = string.IsNullOrWhiteSpace(_searchText)
-                    ? Items.Count
-                    : Items.Count(MatchesSearch);
+                // Count items that pass all filters (search + tipo carpeta)
+                var visibleItems = Items.Where(item => MatchesSearch(item) && MatchesTipoCarpeta(item)).ToList();
+                int count = visibleItems.Count;
                 return $"Mostrando {count} elemento(s)";
             }
         }
@@ -295,14 +347,48 @@ namespace AccesosLauncher
 
             var hasPersonalFile = File.Exists(Path.Combine(directoryPath, ".personal"));
             var hasMixtaFile = File.Exists(Path.Combine(directoryPath, ".mixta"));
+            var hasLaboralFile = File.Exists(Path.Combine(directoryPath, ".laboral"));
 
+            // Check for custom type markers (.tipo_*)
+            var customMarker = GetCustomTypeMarker(directoryPath);
+            var hasCustomMarker = !string.IsNullOrEmpty(customMarker);
+
+            // Use SelectedTipoCarpetaName to properly handle custom types
+            var selectedTypeName = SelectedTipoCarpetaName;
+
+            // Check if selected type is a custom type
+            if (AccessTypeManager.IsCustomType(selectedTypeName))
+            {
+                // For custom types: show only items with exact match
+                return hasCustomMarker &&
+                    customMarker!.Equals(selectedTypeName, StringComparison.OrdinalIgnoreCase);
+            }
+
+            // Base types use legacy logic
             return SelectedTipoCarpeta switch
             {
                 TipoCarpeta.Ambos => hasMixtaFile, // Muestra solo los que tienen .mixta
                 TipoCarpeta.Personal => hasPersonalFile || hasMixtaFile, // Muestra personales y mixtos
-                TipoCarpeta.Laboral => !hasPersonalFile || hasMixtaFile, // Muestra no personales y mixtos
+                TipoCarpeta.Laboral => !hasPersonalFile && !hasMixtaFile && !hasCustomMarker, // Solo los que NO tienen ningún marker
                 _ => true
             };
+        }
+
+        private string? GetCustomTypeMarker(string directoryPath)
+        {
+            if (string.IsNullOrEmpty(directoryPath) || !Directory.Exists(directoryPath))
+                return null;
+
+            var tipoFiles = Directory.GetFiles(directoryPath, ".tipo_*");
+            foreach (var file in tipoFiles)
+            {
+                var fileName = Path.GetFileName(file);
+                if (fileName.StartsWith(".tipo_", StringComparison.OrdinalIgnoreCase))
+                {
+                    return fileName.Substring(6); // Remove ".tipo_" prefix
+                }
+            }
+            return null;
         }
 
         private bool MatchesSearch(AppItem item)
@@ -625,19 +711,41 @@ namespace AccesosLauncher
                 {
                     var json = File.ReadAllText(settingsPath);
                     _userSettings = JsonSerializer.Deserialize<UserSettings>(json);
-                    SelectedTipoCarpeta = _userSettings?.SelectedTipoCarpeta ?? TipoCarpeta.Laboral;
+                    var savedTipo = _userSettings?.SelectedTipoCarpeta ?? TipoCarpeta.Laboral;
+                    
+                    // Initialize AccessTypeManager with custom types
+                    var customTypes = _userSettings?.CustomAccessTypes ?? new List<CustomAccessType>();
+                    AccessTypeManager.Initialize(customTypes);
+                    
+                    // Populate AllAccessTypes and CustomAccessTypesList
+                    AllAccessTypes = AccessTypeManager.GetAllTypes();
+                    OnPropertyChanged(nameof(AllAccessTypes));
+                    CustomAccessTypesList.Clear();
+                    foreach (var type in AccessTypeManager.GetCustomTypesOrdered())
+                    {
+                        CustomAccessTypesList.Add(type);
+                    }
+                    
+                    // Set selected type
+                    SelectedTipoCarpetaName = savedTipo.ToString();
                     ApplyProyectosSplitProportion();
                 }
                 else
                 {
                     _userSettings = new UserSettings();
-                    SelectedTipoCarpeta = TipoCarpeta.Laboral;
+                    AccessTypeManager.Initialize(null);
+                    AllAccessTypes = AccessTypeManager.GetAllTypes();
+                    OnPropertyChanged(nameof(AllAccessTypes));
+                    SelectedTipoCarpetaName = "Laboral";
                 }
             }
             catch (Exception)
             {
                 _userSettings = new UserSettings();
-                SelectedTipoCarpeta = TipoCarpeta.Laboral;
+                AccessTypeManager.Initialize(null);
+                AllAccessTypes = AccessTypeManager.GetAllTypes();
+                OnPropertyChanged(nameof(AllAccessTypes));
+                SelectedTipoCarpetaName = "Laboral";
             }
         }
 
@@ -661,10 +769,12 @@ namespace AccesosLauncher
             {
                 var settingsPath = Path.Combine(AppContext.BaseDirectory, "usersettings.json");
                 CaptureProyectosSplitProportion();
+                var customTypes = AccessTypeManager.GetCustomTypesOrdered();
                 var settings = new UserSettings 
                 { 
                     SelectedTipoCarpeta = this.SelectedTipoCarpeta,
-                    ProyectosSplitProportion = _userSettings?.ProyectosSplitProportion ?? 0.6
+                    ProyectosSplitProportion = _userSettings?.ProyectosSplitProportion ?? 0.6,
+                    CustomAccessTypes = customTypes
                 };
                 var json = JsonSerializer.Serialize(settings);
                 File.WriteAllText(settingsPath, json);
@@ -709,10 +819,10 @@ namespace AccesosLauncher
             if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
-                var values = (TipoCarpeta[])Enum.GetValues(typeof(TipoCarpeta));
-                var currentIndex = (int)SelectedTipoCarpeta;
-                var nextIndex = (currentIndex + 1) % values.Length;
-                SelectedTipoCarpeta = values[nextIndex];
+                var allTypes = AccessTypeManager.GetAllTypes();
+                var currentIndex = allTypes.IndexOf(SelectedTipoCarpetaName);
+                var nextIndex = (currentIndex + 1) % allTypes.Count;
+                SelectedTipoCarpetaName = allTypes[nextIndex];
             }
 
             // Ctrl+F1..F12 → ejecutar acceso del proyecto seleccionado
@@ -1269,19 +1379,11 @@ namespace AccesosLauncher
 
         private void FolderContextMenu_Loaded(object sender, RoutedEventArgs e)
         {
-            if (sender is not ContextMenu contextMenu) return;
-
-            contextMenu.Opened -= FolderContextMenu_Opened;
-            contextMenu.Opened += FolderContextMenu_Opened;
-
-            var typeSubmenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item => "Tipo".Equals(item.Header));
-            if (typeSubmenu != null)
+            // Subscribe to Opened event to populate menu dynamically
+            if (sender is ContextMenu contextMenu)
             {
-                foreach (MenuItem item in typeSubmenu.Items)
-                {
-                    item.Click -= FolderTypeMenuItem_Click;
-                    item.Click += FolderTypeMenuItem_Click;
-                }
+                contextMenu.Opened -= FolderContextMenu_Opened;
+                contextMenu.Opened += FolderContextMenu_Opened;
             }
         }
 
@@ -1290,8 +1392,21 @@ namespace AccesosLauncher
             var contextMenu = sender as ContextMenu;
             if (contextMenu?.PlacementTarget is not TextBlock textBlock) return;
 
-            var typeSubmenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item => "Tipo".Equals(item.Header) || (item.Header is string s && s.EndsWith("Tipo")));
+            var typeSubmenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item => "Tipo".Equals(item.Header));
             if (typeSubmenu == null) return;
+
+            // Always repopulate menu items to include all custom types
+            typeSubmenu.Items.Clear();
+            foreach (var typeName in AccessTypeManager.GetAllTypes())
+            {
+                var menuItem = new MenuItem
+                {
+                    Header = typeName,
+                    Tag = typeName
+                };
+                menuItem.Click += FolderTypeMenuItem_Click;
+                typeSubmenu.Items.Add(menuItem);
+            }
 
             string folderName = textBlock.Text;
             string folderPath = folderName == "Raiz" ? BaseDir : Path.Combine(BaseDir, folderName);
@@ -1304,25 +1419,22 @@ namespace AccesosLauncher
 
             typeSubmenu.IsEnabled = true;
 
-            var hasPersonalFile = File.Exists(Path.Combine(folderPath, ".personal"));
-            var hasMixtaFile = File.Exists(Path.Combine(folderPath, ".mixta"));
-
-            TipoCarpeta currentType;
-            if (hasMixtaFile)
-                currentType = TipoCarpeta.Ambos;
-            else if (hasPersonalFile)
-                currentType = TipoCarpeta.Personal;
-            else
-                currentType = TipoCarpeta.Laboral;
+            // Get current type from folder using AccessTypeManager
+            var currentTypeName = AccessTypeManager.GetTypeFromFolder(folderPath) ?? "Laboral";
 
             foreach (MenuItem item in typeSubmenu.Items)
             {
                 if (item.Tag is string typeName)
                 {
-                    item.Header = typeName;
-                    if (typeName == currentType.ToString())
+                    // Check for exact match (base or custom types)
+                    if (typeName.Equals(currentTypeName, StringComparison.OrdinalIgnoreCase))
                     {
                         item.Header = $"✓ {typeName}";
+                    }
+                    else
+                    {
+                        // Restore original header (remove checkmark if present)
+                        item.Header = typeName;
                     }
                 }
             }
@@ -1331,8 +1443,7 @@ namespace AccesosLauncher
         private void FolderTypeMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not MenuItem clickedItem ||
-                clickedItem.Tag is not string selectedTypeStr ||
-                !Enum.TryParse(selectedTypeStr, out TipoCarpeta selectedType)) return;
+                clickedItem.Tag is not string selectedTypeName) return;
 
             if (clickedItem.Parent is not MenuItem parentMenu ||
                 parentMenu.Parent is not ContextMenu contextMenu ||
@@ -1343,25 +1454,10 @@ namespace AccesosLauncher
 
             if (!Directory.Exists(folderPath)) return;
 
-            var personalFilePath = Path.Combine(folderPath, ".personal");
-            var mixtaFilePath = Path.Combine(folderPath, ".mixta");
-
             try
             {
-                // Clean up existing files first
-                if (File.Exists(personalFilePath)) File.Delete(personalFilePath);
-                if (File.Exists(mixtaFilePath)) File.Delete(mixtaFilePath);
-
-                // Create new files based on selection
-                if (selectedType == TipoCarpeta.Personal)
-                {
-                    File.Create(personalFilePath).Close(); // Create and immediately close
-                }
-                else if (selectedType == TipoCarpeta.Ambos)
-                {
-                    File.Create(mixtaFilePath).Close(); // Create and immediately close
-                }
-                // For Laboral, we just needed to delete the files, which we already did.
+                // Use AccessTypeManager to set the folder type
+                AccessTypeManager.SetTypeForFolder(folderPath, selectedTypeName);
 
                 // Refresh the main filter to apply changes
                 _groupedSource?.View?.Refresh();
@@ -1572,6 +1668,159 @@ namespace AccesosLauncher
             HideToTray();
         }
 
+        // CRUD for Custom Access Types
+        private void AddCustomType_Click(object sender, RoutedEventArgs e)
+        {
+            var newType = NewCustomTypeName?.Trim();
+            if (string.IsNullOrWhiteSpace(newType))
+            {
+                MessageBox.Show("Ingrese un nombre para el tipo.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (AccessTypeManager.IsBaseType(newType))
+            {
+                MessageBox.Show("No puede crear un tipo con el mismo nombre que un tipo base (Personal, Laboral, Ambos).", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (AccessTypeManager.AddType(newType))
+            {
+                var added = AccessTypeManager.GetCustomTypesOrdered().FirstOrDefault(t => t.Name == newType);
+                if (added != null)
+                {
+                    CustomAccessTypesList.Add(added);
+                }
+                RefreshAllAccessTypes();
+                NewCustomTypeName = string.Empty;
+            }
+            else
+            {
+                MessageBox.Show("El tipo ya existe.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void RemoveCustomType_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = SelectedCustomType;
+            if (selected == null)
+            {
+                MessageBox.Show("Seleccione un tipo para eliminar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (AccessTypeManager.IsBaseType(selected.Name))
+            {
+                MessageBox.Show("Los tipos base (Personal, Laboral, Ambos) no se pueden eliminar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var result = MessageBox.Show($"¿Está seguro de eliminar el tipo '{selected.Name}'?", "Confirmar eliminación", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                if (AccessTypeManager.RemoveType(selected.Name))
+                {
+                    CustomAccessTypesList.Clear();
+                    foreach (var type in AccessTypeManager.GetCustomTypesOrdered())
+                    {
+                        CustomAccessTypesList.Add(type);
+                    }
+                    SelectedCustomType = null;
+                    RefreshAllAccessTypes();
+                }
+            }
+        }
+
+        private void EditCustomType_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = SelectedCustomType;
+            if (selected == null)
+            {
+                MessageBox.Show("Seleccione un tipo para editar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (AccessTypeManager.IsBaseType(selected.Name))
+            {
+                MessageBox.Show("Los tipos base (Personal, Laboral, Ambos) no se pueden editar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var newName = Interaction.InputBox($"Ingrese el nuevo nombre para '{selected.Name}':", "Editar Tipo", selected.Name);
+            if (string.IsNullOrWhiteSpace(newName) || newName == selected.Name) return;
+            
+            if (AccessTypeManager.IsBaseType(newName))
+            {
+                MessageBox.Show("No puede usar un nombre de tipo base (Personal, Laboral, Ambos).", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (AccessTypeManager.UpdateType(selected.Name, newName.Trim()))
+            {
+                CustomAccessTypesList.Clear();
+                foreach (var type in AccessTypeManager.GetCustomTypesOrdered())
+                {
+                    CustomAccessTypesList.Add(type);
+                }
+                SelectedCustomType = CustomAccessTypesList.FirstOrDefault(t => t.Name == newName.Trim());
+                RefreshAllAccessTypes();
+            }
+            else
+            {
+                MessageBox.Show("El tipo ya existe o no se encontró.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void MoveUpCustomType_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = SelectedCustomType;
+            if (selected == null || selected.Order <= 1) return;
+
+            var currentOrder = selected.Order;
+            var other = CustomAccessTypesList.FirstOrDefault(t => t.Order == currentOrder - 1);
+            if (other != null)
+            {
+                other.Order = currentOrder;
+                selected.Order = currentOrder - 1;
+                
+                // Refresh lists
+                RefreshCustomAccessTypesList();
+                RefreshAllAccessTypes();
+                SaveUserSettings();
+            }
+        }
+
+        private void MoveDownCustomType_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = SelectedCustomType;
+            if (selected == null) return;
+
+            var maxOrder = AccessTypeManager.GetMaxOrder();
+            if (selected.Order >= maxOrder) return;
+
+            var currentOrder = selected.Order;
+            var other = CustomAccessTypesList.FirstOrDefault(t => t.Order == currentOrder + 1);
+            if (other != null)
+            {
+                other.Order = currentOrder;
+                selected.Order = currentOrder + 1;
+                
+                // Refresh lists
+                RefreshCustomAccessTypesList();
+                RefreshAllAccessTypes();
+                SaveUserSettings();
+            }
+        }
+
+        private void RefreshCustomAccessTypesList()
+        {
+            CustomAccessTypesList.Clear();
+            foreach (var type in AccessTypeManager.GetCustomTypesOrdered())
+            {
+                CustomAccessTypesList.Add(type);
+            }
+            SelectedCustomType = CustomAccessTypesList.FirstOrDefault(t => t.Name == SelectedCustomType?.Name);
+        }
+
+        private void RefreshAllAccessTypes()
+        {
+            AllAccessTypes = AccessTypeManager.GetAllTypes();
+            OnPropertyChanged(nameof(AllAccessTypes));
+        }
+
         private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
         {
             var psi = new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true };
@@ -1615,6 +1864,13 @@ namespace AccesosLauncher
                 }
 
                 Directory.CreateDirectory(newFolderPath);
+                
+                // Create marker file based on selected type (if not Laboral)
+                var selectedType = SelectedTipoCarpetaName;
+                if (!string.IsNullOrEmpty(selectedType) && !selectedType.Equals("Laboral", StringComparison.OrdinalIgnoreCase))
+                {
+                    AccessTypeManager.SetTypeForFolder(newFolderPath, selectedType);
+                }
                 
                 // The FileSystemWatcher will automatically detect the change and refresh the list.
             }
