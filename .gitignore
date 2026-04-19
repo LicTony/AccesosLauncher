@@ -56,3 +56,5 @@ nunit-*.xml
 .vs
 
 AccesosLauncher/Properties
+/openspec/changes/crud-tipos-acceso/proposal.md
+/openspec/config.yaml
