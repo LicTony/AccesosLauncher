@@ -133,7 +133,7 @@ namespace AccesosLauncher
 
         private string _searchText = string.Empty;
         private readonly DatabaseHelper _databaseHelper;
-        private TipoCarpeta _selectedTipoCarpeta;
+        private TipoCarpeta _selectedTipoCarpeta = TipoCarpeta.Laboral;
 
         public TipoCarpeta SelectedTipoCarpeta
         {
@@ -288,6 +288,7 @@ namespace AccesosLauncher
             _databaseHelper.InitializeDatabase();
             LoadUserSettings();
             await LoadItems(); // Carga inicial síncrona de la estructura
+            Dispatcher.BeginInvoke(new Action(() => ListViewItems?.UpdateLayout()), System.Windows.Threading.DispatcherPriority.Background);
             await LoadFaviconsAsync(); // Lanza la carga asíncrona de favicons en segundo plano
             SetupWatcher();
             SetupTrayIcon();
@@ -726,8 +727,11 @@ namespace AccesosLauncher
                         CustomAccessTypesList.Add(type);
                     }
                     
-                    // Set selected type
-                    SelectedTipoCarpetaName = savedTipo.ToString();
+                    // Set selected type — diferido para que el ComboBox procese primero
+                    // el nuevo ItemsSource (OnPropertyChanged de AllAccessTypes anula el SelectedItem).
+                    var tipoToRestore = savedTipo.ToString();
+                    Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = tipoToRestore),
+                        System.Windows.Threading.DispatcherPriority.Loaded);
                     ApplyProyectosSplitProportion();
                 }
                 else
@@ -736,7 +740,8 @@ namespace AccesosLauncher
                     AccessTypeManager.Initialize(null);
                     AllAccessTypes = AccessTypeManager.GetAllTypes();
                     OnPropertyChanged(nameof(AllAccessTypes));
-                    SelectedTipoCarpetaName = "Laboral";
+                    Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = "Laboral"),
+                        System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             }
             catch (Exception)
@@ -745,7 +750,8 @@ namespace AccesosLauncher
                 AccessTypeManager.Initialize(null);
                 AllAccessTypes = AccessTypeManager.GetAllTypes();
                 OnPropertyChanged(nameof(AllAccessTypes));
-                SelectedTipoCarpetaName = "Laboral";
+                Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = "Laboral"),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
 
@@ -2796,7 +2802,7 @@ namespace AccesosLauncher
                 {
                     acceso.Icon = acceso.AccesoTipo switch
                     {
-                        "CarpetaDeTrabajo" => IconHelper.GetIconFromFile("Icons/CarpetaDeTrabajo.ico"),
+                        "CarpetaDeTrabajo" => IconHelper.GetIconFromFile(Path.Combine(AppContext.BaseDirectory, "Icons/CarpetaDeTrabajo.ico")),
                         "Folder" => IconHelper.GetFolderIcon(),
                         _ => IconHelper.GetIconImageSource(acceso.AccesoFullPath),
                     };
