@@ -125,10 +125,14 @@ namespace AccesosLauncher
         private HwndSource? _source;
         private IntPtr _hwnd;
 
+        private const string ErrorTitle = "Error";
+        private const string TypeCarpetaDeTrabajo = "CarpetaDeTrabajo";
+        private const string ExplorerExe = "explorer.exe";
         private const int HOTKEY_ID = 9000;
         private const int WM_HOTKEY = 0x0312;
         private const uint MOD_ALT = 0x0001;
         private const uint MOD_CONTROL = 0x0002;
+        private const uint MOD_SHIFT = 0x0004;
         private const uint MOD_WIN = 0x0008;
 
         private string _searchText = string.Empty;
@@ -150,7 +154,7 @@ namespace AccesosLauncher
             }
         }
 
-        private string _selectedTipoCarpetaName = "Laboral";
+        private string _selectedTipoCarpetaName = AccessTypeManager.TypeLaboral;
 
         public string SelectedTipoCarpetaName
         {
@@ -183,7 +187,7 @@ namespace AccesosLauncher
             OnPropertyChanged(nameof(ResultCountText));
         }
 
-        public List<string> AllAccessTypes { get; private set; } = new();
+        public List<string> AllAccessTypes { get; private set; } = [];
 
         public string SearchText
         {
@@ -241,11 +245,28 @@ namespace AccesosLauncher
             _source = HwndSource.FromHwnd(_hwnd);
             _source.AddHook(WndProc);
 
-            // Win + Alt + Up
-            var vkT = (uint)KeyInterop.VirtualKeyFromKey(Key.Up);
-            if (!RegisterHotKey(_hwnd, HOTKEY_ID, MOD_WIN | MOD_ALT, vkT))
+            // Read from config
+            string modifiersStr = App.Configuration["GlobalHotkeyModifiers"] ?? "Win, Alt";
+            string keyStr = App.Configuration["GlobalHotkeyKey"] ?? "Up";
+
+            uint modifiers = 0;
+            if (modifiersStr.Contains("Win", StringComparison.OrdinalIgnoreCase)) modifiers |= MOD_WIN;
+            if (modifiersStr.Contains("Alt", StringComparison.OrdinalIgnoreCase)) modifiers |= MOD_ALT;
+            if (modifiersStr.Contains("Ctrl", StringComparison.OrdinalIgnoreCase) || modifiersStr.Contains("Control", StringComparison.OrdinalIgnoreCase)) modifiers |= MOD_CONTROL;
+            if (modifiersStr.Contains("Shift", StringComparison.OrdinalIgnoreCase)) modifiers |= MOD_SHIFT;
+
+            if (Enum.TryParse<Key>(keyStr, true, out var key))
             {
-                System.Windows.MessageBox.Show("No se pudo registrar la tecla rápida Win+Alt+Up (¿ya la usa otra app?).",
+                var vkT = (uint)KeyInterop.VirtualKeyFromKey(key);
+                if (!RegisterHotKey(_hwnd, HOTKEY_ID, modifiers, vkT))
+                {
+                    System.Windows.MessageBox.Show($"No se pudo registrar la tecla rápida {modifiersStr} + {keyStr} (¿ya la usa otra app?).",
+                        "Atajo global", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            else
+            {
+                System.Windows.MessageBox.Show($"Tecla '{keyStr}' no válida en appsettings.json.",
                     "Atajo global", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -263,23 +284,21 @@ namespace AccesosLauncher
         [SupportedOSPlatform("windows6.1")]
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            if (App.Configuration.GetSection("OpacityPercentage").Exists() && int.TryParse(App.Configuration["OpacityPercentage"], out int opacityPercentage))
+            if (App.Configuration.GetSection("OpacityPercentage").Exists() && int.TryParse(App.Configuration["OpacityPercentage"], out int opacityPercentage)
+             && opacityPercentage >= 0 && opacityPercentage <= 100)
             {
-                if (opacityPercentage >= 0 && opacityPercentage <= 100)
-                {
-                    var opacity = opacityPercentage / 100.0;
-                    var alpha = (byte)(opacity * 255);
-                    Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, 0, 0, 0));
-                }
+                var opacity = opacityPercentage / 100.0;
+                var alpha = (byte)(opacity * 255);
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, 0, 0, 0));
             }
+            
 
-            if (App.Configuration.GetSection("BorderThickness").Exists() && int.TryParse(App.Configuration["BorderThickness"], out int borderThickness))
+            if (App.Configuration.GetSection("BorderThickness").Exists() && int.TryParse(App.Configuration["BorderThickness"], out int borderThickness)
+             && borderThickness >= 0)
             {
-                if (borderThickness >= 0)
-                {
-                    MainBorder.BorderThickness = new Thickness(borderThickness);
-                }
+                MainBorder.BorderThickness = new Thickness(borderThickness);
             }
+            
 
             _groupedSource = (CollectionViewSource)FindResource("GroupedItems");
             _groupedSource.Filter += GroupedSource_Filter;
@@ -294,8 +313,7 @@ namespace AccesosLauncher
             SetupTrayIcon();
             await InitializeWebView2Async();
 
-            // Arranca en segundo plano
-            //HideToTray();
+            // Arranca en segundo plano            
         }
 
         private void GroupedSource_Filter(object sender, FilterEventArgs e)
@@ -348,8 +366,7 @@ namespace AccesosLauncher
 
             var hasPersonalFile = File.Exists(Path.Combine(directoryPath, ".personal"));
             var hasMixtaFile = File.Exists(Path.Combine(directoryPath, ".mixta"));
-            var hasLaboralFile = File.Exists(Path.Combine(directoryPath, ".laboral"));
-
+            
             // Check for custom type markers (.tipo_*)
             var customMarker = GetCustomTypeMarker(directoryPath);
             var hasCustomMarker = !string.IsNullOrEmpty(customMarker);
@@ -375,7 +392,7 @@ namespace AccesosLauncher
             };
         }
 
-        private string? GetCustomTypeMarker(string directoryPath)
+        private static string? GetCustomTypeMarker(string directoryPath)
         {
             if (string.IsNullOrEmpty(directoryPath) || !Directory.Exists(directoryPath))
                 return null;
@@ -386,7 +403,7 @@ namespace AccesosLauncher
                 var fileName = Path.GetFileName(file);
                 if (fileName.StartsWith(".tipo_", StringComparison.OrdinalIgnoreCase))
                 {
-                    return fileName.Substring(6); // Remove ".tipo_" prefix
+                    return fileName[6..]; // Remove ".tipo_" prefix
                 }
             }
             return null;
@@ -427,7 +444,7 @@ namespace AccesosLauncher
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show($"No se pudo crear/abrir el directorio base:\n{BaseDir}\n\n{ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -514,7 +531,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Error al leer accesos:{ex.Message}", "Error",
+                System.Windows.MessageBox.Show($"Error al leer accesos:{ex.Message}", ErrorTitle,
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -614,15 +631,16 @@ namespace AccesosLauncher
         [SupportedOSPlatform("windows6.1")]
         private void SetupTrayIcon()
         {
+            string hotkeyDisplay = GetGlobalHotkeyDisplayName();
             _notifyIcon = new NotifyIcon
             {
                 Icon = new System.Drawing.Icon("AccesosLauncher.ico"),
                 Visible = true,
-                Text = "Accesos Launcher (Win+Alt+Up)"
+                Text = $"Accesos Launcher ({hotkeyDisplay})"
             };
 
             var menu = new ContextMenuStrip();
-            var openItem = new ToolStripMenuItem("Abrir (Win+Alt+Up)");
+            var openItem = new ToolStripMenuItem($"Abrir ({hotkeyDisplay})");
             openItem.Click += (_, __) => ShowWindowFromTray();
             var exitItem = new ToolStripMenuItem("Salir");
             exitItem.Click += (_, __) =>
@@ -636,6 +654,25 @@ namespace AccesosLauncher
             menu.Items.Add(exitItem);
             _notifyIcon.ContextMenuStrip = menu;
             _notifyIcon.DoubleClick += (_, __) => ShowWindowFromTray();
+        }
+
+        private static string GetGlobalHotkeyDisplayName()
+        {
+            string modifiersStr = App.Configuration["GlobalHotkeyModifiers"] ?? "Win, Alt";
+            string keyStr = App.Configuration["GlobalHotkeyKey"] ?? "Up";
+
+            // Basic translation for common keys to maintain UI language consistency
+            string displayKey = keyStr switch
+            {
+                "Up" => "Flecha Arriba",
+                "Down" => "Flecha Abajo",
+                "Left" => "Flecha Izquierda",
+                "Right" => "Flecha Derecha",
+                _ => keyStr
+            };
+
+            string displayModifiers = modifiersStr.Replace(",", " +");
+            return $"{displayModifiers} + {displayKey}";
         }
 
         private void ShowWindowFromTray()
@@ -712,10 +749,9 @@ namespace AccesosLauncher
                 {
                     var json = File.ReadAllText(settingsPath);
                     _userSettings = JsonSerializer.Deserialize<UserSettings>(json);
-                    var savedTipo = _userSettings?.SelectedTipoCarpeta ?? TipoCarpeta.Laboral;
                     
                     // Initialize AccessTypeManager with custom types
-                    var customTypes = _userSettings?.CustomAccessTypes ?? new List<CustomAccessType>();
+                    var customTypes = _userSettings?.CustomAccessTypes ?? [];
                     AccessTypeManager.Initialize(customTypes);
                     
                     // Populate AllAccessTypes and CustomAccessTypesList
@@ -729,8 +765,8 @@ namespace AccesosLauncher
                     
                     // Set selected type — diferido para que el ComboBox procese primero
                     // el nuevo ItemsSource (OnPropertyChanged de AllAccessTypes anula el SelectedItem).
-                    var tipoToRestore = savedTipo.ToString();
-                    Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = tipoToRestore),
+                    
+                    Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = AccessTypeManager.TypeLaboral),
                         System.Windows.Threading.DispatcherPriority.Loaded);
                     ApplyProyectosSplitProportion();
                 }
@@ -740,7 +776,7 @@ namespace AccesosLauncher
                     AccessTypeManager.Initialize(null);
                     AllAccessTypes = AccessTypeManager.GetAllTypes();
                     OnPropertyChanged(nameof(AllAccessTypes));
-                    Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = "Laboral"),
+                    Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = AccessTypeManager.TypeLaboral),
                         System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             }
@@ -750,7 +786,7 @@ namespace AccesosLauncher
                 AccessTypeManager.Initialize(null);
                 AllAccessTypes = AccessTypeManager.GetAllTypes();
                 OnPropertyChanged(nameof(AllAccessTypes));
-                Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = "Laboral"),
+                Dispatcher.BeginInvoke(new Action(() => SelectedTipoCarpetaName = AccessTypeManager.TypeLaboral),
                     System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
@@ -879,7 +915,7 @@ namespace AccesosLauncher
                 {
                     Process.Start(new ProcessStartInfo(acceso.AccesoFullPath) { UseShellExecute = true });
                 }
-                else if (acceso.AccesoTipo == "CarpetaDeTrabajo" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.CarpetaDeTrabajo.ToString())
+                else if (acceso.AccesoTipo == TypeCarpetaDeTrabajo || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.CarpetaDeTrabajo.ToString())
                 {
                     try
                     {
@@ -908,7 +944,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"No se pudo abrir:\n{acceso.AccesoFullPath}\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"No se pudo abrir:\n{acceso.AccesoFullPath}\n\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -933,7 +969,7 @@ namespace AccesosLauncher
                     try
                     {
                         // Open the folder in Windows Explorer
-                        Process.Start("explorer.exe", item.FullPath);
+                        Process.Start(ExplorerExe, item.FullPath);
                     }
                     catch (Exception ex)
                     {
@@ -1186,7 +1222,7 @@ namespace AccesosLauncher
                 try
                 {
                     // Abrir la carpeta en el Explorador de Windows
-                    Process.Start("explorer.exe", folderPath);
+                    Process.Start(ExplorerExe, folderPath);
                 }
                 catch (Exception ex)
                 {
@@ -1426,7 +1462,7 @@ namespace AccesosLauncher
             typeSubmenu.IsEnabled = true;
 
             // Get current type from folder using AccessTypeManager
-            var currentTypeName = AccessTypeManager.GetTypeFromFolder(folderPath) ?? "Laboral";
+            var currentTypeName = AccessTypeManager.GetTypeFromFolder(folderPath) ?? AccessTypeManager.TypeLaboral;
 
             foreach (MenuItem item in typeSubmenu.Items)
             {
@@ -1470,7 +1506,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"No se pudo cambiar el tipo de la carpeta: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show($"No se pudo cambiar el tipo de la carpeta: {ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1575,16 +1611,18 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Error al cargar la configuración:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show($"Error al cargar la configuración:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private void LoadKeyboardShortcuts()
         {
-            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Win + Alt + Flecha Arriba", Description = "Mostrar/ocultar la ventana principal de la aplicación" });
+            string hotkeyDisplay = GetGlobalHotkeyDisplayName();
+
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = hotkeyDisplay, Description = "Mostrar/ocultar la ventana principal de la aplicación" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tecla de Windows + Shift + Flecha Izq. o Der.", Description = "Mover la ventana principal de la aplicación a otro monitor" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Escape", Description = "Ocultar la ventana y minimizar a la bandeja del sistema" });
-            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + T", Description = "Cambiar entre tipos de carpeta (Ambos, Personal, Laboral)" });
+            KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + T", Description = $"Cambiar entre tipos de carpeta ({AccessTypeManager.TypeAmbos}, {AccessTypeManager.TypePersonal}, {AccessTypeManager.TypeLaboral})" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Tab", Description = "Navegar entre las pestañas principales (Accesos, Más Usados, Configuración, Acerca de)" });
             KeyboardShortcuts.Add(new KeyboardShortcut { Shortcut = "Ctrl + F1..F12 (tab Proyectos)", Description = "Ejecutar el acceso 1 al 12 del proyecto seleccionado" });
         }
@@ -1660,7 +1698,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Error al guardar la configuración:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show($"Error al guardar la configuración:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1680,12 +1718,12 @@ namespace AccesosLauncher
             var newType = NewCustomTypeName?.Trim();
             if (string.IsNullOrWhiteSpace(newType))
             {
-                MessageBox.Show("Ingrese un nombre para el tipo.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Ingrese un nombre para el tipo.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (AccessTypeManager.IsBaseType(newType))
             {
-                MessageBox.Show("No puede crear un tipo con el mismo nombre que un tipo base (Personal, Laboral, Ambos).", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"No puede crear un tipo con el mismo nombre que un tipo base ({AccessTypeManager.TypePersonal}, {AccessTypeManager.TypeLaboral}, {AccessTypeManager.TypeAmbos}).", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (AccessTypeManager.AddType(newType))
@@ -1700,7 +1738,7 @@ namespace AccesosLauncher
             }
             else
             {
-                MessageBox.Show("El tipo ya existe.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("El tipo ya existe.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -1709,18 +1747,17 @@ namespace AccesosLauncher
             var selected = SelectedCustomType;
             if (selected == null)
             {
-                MessageBox.Show("Seleccione un tipo para eliminar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Seleccione un tipo para eliminar.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (AccessTypeManager.IsBaseType(selected.Name))
             {
-                MessageBox.Show("Los tipos base (Personal, Laboral, Ambos) no se pueden eliminar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Los tipos base ({AccessTypeManager.TypePersonal}, {AccessTypeManager.TypeLaboral}, {AccessTypeManager.TypeAmbos}) no se pueden eliminar.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             var result = MessageBox.Show($"¿Está seguro de eliminar el tipo '{selected.Name}'?", "Confirmar eliminación", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (result == MessageBoxResult.Yes)
-            {
-                if (AccessTypeManager.RemoveType(selected.Name))
+            if (result == MessageBoxResult.Yes
+                && AccessTypeManager.RemoveType(selected.Name))
                 {
                     CustomAccessTypesList.Clear();
                     foreach (var type in AccessTypeManager.GetCustomTypesOrdered())
@@ -1730,7 +1767,7 @@ namespace AccesosLauncher
                     SelectedCustomType = null;
                     RefreshAllAccessTypes();
                 }
-            }
+            
         }
 
         private void EditCustomType_Click(object sender, RoutedEventArgs e)
@@ -1738,12 +1775,12 @@ namespace AccesosLauncher
             var selected = SelectedCustomType;
             if (selected == null)
             {
-                MessageBox.Show("Seleccione un tipo para editar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Seleccione un tipo para editar.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (AccessTypeManager.IsBaseType(selected.Name))
             {
-                MessageBox.Show("Los tipos base (Personal, Laboral, Ambos) no se pueden editar.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Los tipos base ({AccessTypeManager.TypePersonal}, {AccessTypeManager.TypeLaboral}, {AccessTypeManager.TypeAmbos}) no se pueden editar.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             var newName = Interaction.InputBox($"Ingrese el nuevo nombre para '{selected.Name}':", "Editar Tipo", selected.Name);
@@ -1751,7 +1788,7 @@ namespace AccesosLauncher
             
             if (AccessTypeManager.IsBaseType(newName))
             {
-                MessageBox.Show("No puede usar un nombre de tipo base (Personal, Laboral, Ambos).", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"No puede usar un nombre de tipo base ({AccessTypeManager.TypePersonal}, {AccessTypeManager.TypeLaboral}, {AccessTypeManager.TypeAmbos}).", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (AccessTypeManager.UpdateType(selected.Name, newName.Trim()))
@@ -1766,7 +1803,7 @@ namespace AccesosLauncher
             }
             else
             {
-                MessageBox.Show("El tipo ya existe o no se encontró.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("El tipo ya existe o no se encontró.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -1873,7 +1910,7 @@ namespace AccesosLauncher
                 
                 // Create marker file based on selected type (if not Laboral)
                 var selectedType = SelectedTipoCarpetaName;
-                if (!string.IsNullOrEmpty(selectedType) && !selectedType.Equals("Laboral", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(selectedType) && !selectedType.Equals(AccessTypeManager.TypeLaboral, StringComparison.OrdinalIgnoreCase))
                 {
                     AccessTypeManager.SetTypeForFolder(newFolderPath, selectedType);
                 }
@@ -2161,7 +2198,7 @@ namespace AccesosLauncher
             catch (System.Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"MoveItemToDirectory: Error moving {item.Name} - {ex.Message}");
-                System.Windows.MessageBox.Show($"Error al mover el archivo:\n{ex.Message}", "Error", 
+                System.Windows.MessageBox.Show($"Error al mover el archivo:\n{ex.Message}", ErrorTitle, 
                     System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
         }
@@ -2211,7 +2248,7 @@ namespace AccesosLauncher
             catch (System.Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"CopyFileToDirectory: Error copying {sourcePath} - {ex.Message}");
-                System.Windows.MessageBox.Show($"Error al copiar el archivo:\n{ex.Message}", "Error", 
+                System.Windows.MessageBox.Show($"Error al copiar el archivo:\n{ex.Message}", ErrorTitle, 
                     System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
         }
@@ -2261,7 +2298,7 @@ namespace AccesosLauncher
             catch (System.Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"CreateShortcutToDirectory: Error creating shortcut for {sourcePath} - {ex.Message}");
-                System.Windows.MessageBox.Show($"Error al crear el acceso directo:\n{ex.Message}", "Error", 
+                System.Windows.MessageBox.Show($"Error al crear el acceso directo:\n{ex.Message}", ErrorTitle, 
                     System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
         }
@@ -2395,12 +2432,12 @@ namespace AccesosLauncher
                 }
                 else
                 {
-                    MessageBox.Show("No se pudo encontrar un favicon para esta URL.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show("No se pudo encontrar un favicon para esta URL.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error: {ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2470,7 +2507,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                 MessageBox.Show($"Error al descargar o convertir el favicon: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                 MessageBox.Show($"Error al descargar o convertir el favicon: {ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2516,7 +2553,7 @@ namespace AccesosLauncher
             {
                 try
                 {
-                    Process.Start("explorer.exe", item.FullPath);
+                    Process.Start(ExplorerExe, item.FullPath);
                     HideToTray();
                 }
                 catch (Exception ex)
@@ -2631,7 +2668,7 @@ namespace AccesosLauncher
             if (e.Data.GetData("ProyectoAcceso") is not Models.ProyectoAcceso draggedAcceso) return;
             if (SelectedProyecto == null) return;
 
-            if (sender is not WrapPanel wrapPanel) return;
+            if (sender is not WrapPanel) return;
 
             var targetElement = FindAncestor<System.Windows.Controls.Button>((DependencyObject)e.OriginalSource);
             
@@ -2692,7 +2729,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al reordenar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al reordenar:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2719,7 +2756,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al cargar proyectos:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al cargar proyectos:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2802,7 +2839,7 @@ namespace AccesosLauncher
                 {
                     acceso.Icon = acceso.AccesoTipo switch
                     {
-                        "CarpetaDeTrabajo" => IconHelper.GetIconFromFile(Path.Combine(AppContext.BaseDirectory, "Icons/CarpetaDeTrabajo.ico")),
+                        TypeCarpetaDeTrabajo => IconHelper.GetIconFromFile(Path.Combine(AppContext.BaseDirectory, $"Icons/{TypeCarpetaDeTrabajo}.ico")),
                         "Folder" => IconHelper.GetFolderIcon(),
                         _ => IconHelper.GetIconImageSource(acceso.AccesoFullPath),
                     };
@@ -2812,7 +2849,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al cargar accesos:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al cargar accesos:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2927,12 +2964,12 @@ namespace AccesosLauncher
                         var directory = Path.GetDirectoryName(acceso.AccesoFullPath);
                         if (!string.IsNullOrEmpty(directory))
                         {
-                            Process.Start("explorer.exe", $"/select,\"{acceso.AccesoFullPath}\"");
+                            Process.Start(ExplorerExe, $"/select,\"{acceso.AccesoFullPath}\"");
                         }
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"No se pudo abrir la ubicación:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show($"No se pudo abrir la ubicación:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 };
                 contextMenu.Items.Add(renameItem);
@@ -2968,7 +3005,7 @@ namespace AccesosLauncher
                     {
                         Process.Start(new ProcessStartInfo(acceso.AccesoFullPath) { UseShellExecute = true });
                     }
-                    else if (acceso.AccesoTipo == "CarpetaDeTrabajo" || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.CarpetaDeTrabajo.ToString())
+                    else if (acceso.AccesoTipo == TypeCarpetaDeTrabajo || acceso.AccesoTipo == Enums.ProyectoAccesoTipo.CarpetaDeTrabajo.ToString())
                     {
                         try
                         {
@@ -2997,7 +3034,7 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"No se pudo abrir:\n{acceso.AccesoFullPath}\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"No se pudo abrir:\n{acceso.AccesoFullPath}\n\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -3015,7 +3052,7 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al renombrar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error al renombrar:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -3034,7 +3071,7 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al eliminar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error al eliminar:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -3207,14 +3244,14 @@ namespace AccesosLauncher
             {
                 if (string.IsNullOrWhiteSpace(txtNombre.Text))
                 {
-                    MessageBox.Show("El nombre es obligatorio.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("El nombre es obligatorio.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
                 var proyectos = _databaseHelper.GetProyectos(false, null);
                 if (proyectos.Any(p => p.Nombre.Equals(txtNombre.Text, StringComparison.OrdinalIgnoreCase)))
                 {
-                    MessageBox.Show("El nombre ya existe.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("El nombre ya existe.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -3227,7 +3264,7 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al crear proyecto:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error al crear proyecto:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             };
 
@@ -3288,14 +3325,14 @@ namespace AccesosLauncher
             {
                 if (string.IsNullOrWhiteSpace(txtNombre.Text))
                 {
-                    MessageBox.Show("El nombre es obligatorio.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("El nombre es obligatorio.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
                 var proyectos = _databaseHelper.GetProyectos(false, null);
                 if (proyectos.Any(p => p.Id != SelectedProyecto.Id && p.Nombre.Equals(txtNombre.Text, StringComparison.OrdinalIgnoreCase)))
                 {
-                    MessageBox.Show("El nombre ya existe.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("El nombre ya existe.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -3308,7 +3345,7 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al actualizar proyecto:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error al actualizar proyecto:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             };
 
@@ -3338,7 +3375,7 @@ namespace AccesosLauncher
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al eliminar proyecto:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error al eliminar proyecto:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -3366,7 +3403,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al cambiar estado:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al cambiar estado:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -3380,14 +3417,12 @@ namespace AccesosLauncher
 
         private void TxtBuscarProyecto_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                if (Proyectos.Count == 1)
+            if (e.Key == Key.Enter
+                && Proyectos.Count == 1)
                 {
                     SelectedProyecto = Proyectos[0];
                     dgProyectos.Focus();
-                }
-            }
+                }            
         }
 
         private void DgProyectos_Sorting(object sender, DataGridSortingEventArgs e)
@@ -3471,7 +3506,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al previsualizar:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al previsualizar:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -3519,7 +3554,7 @@ namespace AccesosLauncher
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al guardar descripcion:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error al guardar descripcion:\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -3618,22 +3653,20 @@ namespace AccesosLauncher
             {
                 if (string.IsNullOrWhiteSpace(txtPath.Text))
                 {
-                    MessageBox.Show("La ruta es obligatoria.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("La ruta es obligatoria.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                string accesoTipo = cmbTipo.SelectedIndex switch { 0 => "File", 1 => "Folder", 2 => "CarpetaDeTrabajo", 3 => "Url", _ => "File" };
+                string accesoTipo = cmbTipo.SelectedIndex switch { 0 => "File", 1 => "Folder", 2 => TypeCarpetaDeTrabajo, 3 => "Url", _ => "File" };
 
-                if (accesoTipo == "Url")
-                {
-                    if (!Uri.TryCreate(txtPath.Text, UriKind.Absolute, out var uri) ||
-                        (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFtp))
+                if (accesoTipo == "Url"
+                 &&  (!Uri.TryCreate(txtPath.Text, UriKind.Absolute, out var uri) ||
+                     (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFtp)))
                     {
-                        MessageBox.Show("URL inválida. Debe comenzar con http://, https:// o ftp://.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show("URL inválida. Debe comenzar con http://, https:// o ftp://.", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
-                }
-
+                
                 var paths = txtPath.Text.Split('|');
                 var existingAccesos = _databaseHelper.GetProyectoAccesos(SelectedProyecto.Id);
                 int addedCount = 0;
@@ -3662,7 +3695,7 @@ namespace AccesosLauncher
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"Error al agregar acceso '{path}':\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show($"Error al agregar acceso '{path}':\n{ex.Message}", ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
 

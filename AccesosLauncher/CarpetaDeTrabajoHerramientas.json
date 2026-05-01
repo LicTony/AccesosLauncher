@@ -7,9 +7,9 @@
   },
   {
     "Orden": 2,
-    "Title": "qwen",
+    "Title": "gemini",
     "TabColor": "#4a3a8a",
-    "Parametro": "pwsh -NoExit -Command qwen"
+    "Parametro": "pwsh -NoExit -Command gemini"
   },
   {
     "Orden": 3,

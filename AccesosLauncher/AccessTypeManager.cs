@@ -4,13 +4,17 @@ namespace AccesosLauncher
 {
     public static class AccessTypeManager
     {
-        public static readonly string[] BaseTypes = { "Personal", "Laboral", "Ambos" };
+        public const string TypeLaboral = "Laboral";
+        public const string TypePersonal = "Personal";
+        public const string TypeAmbos = "Ambos";
 
-        private static List<CustomAccessType> _customTypes = new();
+        public static readonly string[] BaseTypes = [TypePersonal, TypeLaboral, TypeAmbos];
+
+        private static List<CustomAccessType> _customTypes = [];
 
         public static void Initialize(IEnumerable<CustomAccessType>? customTypes)
         {
-            _customTypes = customTypes?.OrderBy(t => t.Order).ToList() ?? new List<CustomAccessType>();
+            _customTypes = customTypes?.OrderBy(t => t.Order).ToList() ?? [];
         }
 
         public static List<string> GetAllTypes()
@@ -28,12 +32,12 @@ namespace AccesosLauncher
 
         public static List<CustomAccessType> GetCustomTypesOrdered()
         {
-            return _customTypes.OrderBy(t => t.Order).ToList();
+            return [.. _customTypes.OrderBy(t => t.Order)];
         }
 
         public static int GetMaxOrder()
         {
-            return _customTypes.Any() ? _customTypes.Max(t => t.Order) : 0;
+            return _customTypes.Count != 0 ? _customTypes.Max(t => t.Order) : 0;
         }
 
         public static bool AddType(string name)
@@ -107,11 +111,11 @@ namespace AccesosLauncher
             if (string.IsNullOrWhiteSpace(typeName)) return string.Empty;
 
             // Base types use legacy markers
-            if (typeName.Equals("Personal", StringComparison.OrdinalIgnoreCase))
+            if (typeName.Equals(TypePersonal, StringComparison.OrdinalIgnoreCase))
                 return ".personal";
-            if (typeName.Equals("Laboral", StringComparison.OrdinalIgnoreCase))
+            if (typeName.Equals(TypeLaboral, StringComparison.OrdinalIgnoreCase))
                 return ".laboral";
-            if (typeName.Equals("Ambos", StringComparison.OrdinalIgnoreCase))
+            if (typeName.Equals(TypeAmbos, StringComparison.OrdinalIgnoreCase))
                 return ".mixta";
 
             // Custom types use .tipo_Nombre format
@@ -183,7 +187,7 @@ namespace AccesosLauncher
                 var fileName = Path.GetFileName(file);
                 if (fileName.StartsWith(".tipo_", StringComparison.OrdinalIgnoreCase))
                 {
-                    var typeName = fileName.Substring(6); // Remove ".tipo_" prefix
+                    var typeName = fileName[6..]; // Remove ".tipo_" prefix
                     // Validate this is a known custom type
                     if (IsCustomType(typeName))
                     {
@@ -197,12 +201,12 @@ namespace AccesosLauncher
             var mixtaPath = Path.Combine(folderPath, ".mixta");
             var laboralPath = Path.Combine(folderPath, ".laboral");
 
-            if (File.Exists(mixtaPath)) return "Ambos";
-            if (File.Exists(personalPath)) return "Personal";
-            if (File.Exists(laboralPath)) return "Laboral";
+            if (File.Exists(mixtaPath)) return TypeAmbos;
+            if (File.Exists(personalPath)) return TypePersonal;
+            if (File.Exists(laboralPath)) return TypeLaboral;
 
             // Default to Laboral (no markers = laboral)
-            return "Laboral";
+            return TypeLaboral;
         }
 
         public static TipoCarpeta GetTipoCarpetaFromString(string? typeName)
